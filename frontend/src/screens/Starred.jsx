@@ -19,6 +19,7 @@ import {
   Paperclip,
   AlertCircle,
   StarOff,
+  X
 } from 'lucide-react';
 import { format } from 'date-fns';
 
@@ -27,6 +28,8 @@ const Starred = () => {
   const [page, setPage] = useState(1);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedEmails, setSelectedEmails] = useState([]);
+  const [showFilterMenu, setShowFilterMenu] = useState(false);
+  const [filterType, setFilterType] = useState('all');
   const limit = 20;
 
   const { data, isLoading, error, refetch } = useGetInboxQuery({ page, limit, folder: 'starred' });
@@ -69,19 +72,34 @@ const Starred = () => {
     return colors[Math.abs(hash) % colors.length];
   };
 
-  // Group by sender (WhatsApp style)
-  const groupedBySender = useMemo(() => {
-    const filtered = emails.filter((email) => {
+  // Apply filters to emails
+  const getFilteredEmails = (emailsToFilter) => {
+    let filtered = [...emailsToFilter];
+    
+    if (searchTerm) {
       const term = searchTerm.toLowerCase();
-      return (
+      filtered = filtered.filter((email) =>
         email.subject?.toLowerCase().includes(term) ||
         email.from?.email?.toLowerCase().includes(term) ||
         getPlainText(email.content).toLowerCase().includes(term)
       );
-    });
+    }
+    
+    if (filterType === 'unread') {
+      filtered = filtered.filter((email) => !email.isRead);
+    } else if (filterType === 'hasAttachments') {
+      filtered = filtered.filter((email) => email.attachments?.length > 0);
+    }
+    
+    return filtered;
+  };
 
+  // Group by sender (WhatsApp style)
+  const groupedBySender = useMemo(() => {
+    const filteredEmails = getFilteredEmails(emails);
+    
     const map = new Map();
-    filtered.forEach((email) => {
+    filteredEmails.forEach((email) => {
       const key = email.from?.email;
       if (!map.has(key)) map.set(key, []);
       map.get(key).push(email);
@@ -111,17 +129,11 @@ const Starred = () => {
     );
 
     return groups;
-  }, [emails, searchTerm]);
+  }, [emails, searchTerm, filterType]);
 
   const filteredEmails = useMemo(() => {
-    const term = searchTerm.toLowerCase();
-    return emails.filter(
-      (email) =>
-        email.subject?.toLowerCase().includes(term) ||
-        email.from?.email?.toLowerCase().includes(term) ||
-        getPlainText(email.content).toLowerCase().includes(term)
-    );
-  }, [emails, searchTerm]);
+    return getFilteredEmails(emails);
+  }, [emails, searchTerm, filterType]);
 
   const handleThreadClick = async (group) => {
     for (const email of group.emails) {
@@ -177,6 +189,14 @@ const Starred = () => {
     );
   };
 
+  const getFilterLabel = () => {
+    switch (filterType) {
+      case 'unread': return 'Unread';
+      case 'hasAttachments': return 'Has Attachments';
+      default: return 'All';
+    }
+  };
+
   if (isLoading && page === 1) {
     return (
       <div className="flex items-center justify-center h-screen bg-white">
@@ -209,63 +229,112 @@ const Starred = () => {
   // ─── MOBILE VIEW ─────────────────────────────────────────────────────────────
   const MobileView = () => (
     <div className="flex flex-col h-screen bg-white md:hidden">
-      {/* Top Bar */}
-      <div className="flex items-center px-3 pt-3 pb-2 gap-2 border-b border-gray-100">
-        <h1 className="text-base font-semibold text-gray-900 flex-shrink-0">Starred</h1>
-        <div className="relative flex-1">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
-          <input
-            type="text"
-            placeholder="Search"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-8 pr-3 py-1.5 bg-gray-100 rounded-full text-xs focus:outline-none focus:ring-2 focus:ring-purple-400"
-          />
+      {/* Fixed Top Bar */}
+      <div className="sticky top-0 z-10 bg-white border-b border-gray-100">
+        <div className="px-3 pt-3 pb-2">
+          <div className="flex items-center gap-2">
+            <h1 className="text-base font-semibold text-gray-900 flex-shrink-0">Starred</h1>
+            <div className="relative flex-1">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Search"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-8 pr-3 py-1.5 bg-gray-100 rounded-full text-xs focus:outline-none focus:ring-2 focus:ring-purple-400"
+              />
+            </div>
+            <div className="relative">
+              <button
+                onClick={() => setShowFilterMenu(!showFilterMenu)}
+                className={`p-1.5 rounded-full transition ${filterType !== 'all' ? 'bg-purple-100 text-purple-600' : 'text-gray-400'}`}
+              >
+                <Filter className="w-4 h-4" />
+              </button>
+              
+              {/* Filter Menu */}
+              {showFilterMenu && (
+                <div className="absolute right-0 top-full mt-2 w-40 bg-white rounded-lg shadow-lg border border-gray-100 z-20">
+                  <div className="py-1">
+                    <button
+                      onClick={() => { setFilterType('all'); setShowFilterMenu(false); }}
+                      className={`w-full text-left px-3 py-2 text-xs ${filterType === 'all' ? 'bg-purple-50 text-purple-600' : 'text-gray-600'}`}
+                    >
+                      All emails
+                    </button>
+                    <button
+                      onClick={() => { setFilterType('unread'); setShowFilterMenu(false); }}
+                      className={`w-full text-left px-3 py-2 text-xs ${filterType === 'unread' ? 'bg-purple-50 text-purple-600' : 'text-gray-600'}`}
+                    >
+                      Unread only
+                    </button>
+                    <button
+                      onClick={() => { setFilterType('hasAttachments'); setShowFilterMenu(false); }}
+                      className={`w-full text-left px-3 py-2 text-xs ${filterType === 'hasAttachments' ? 'bg-purple-50 text-purple-600' : 'text-gray-600'}`}
+                    >
+                      With attachments
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+          
+          {/* Active Filter Badge */}
+          {filterType !== 'all' && (
+            <div className="flex items-center mt-2">
+              <span className="text-xs bg-purple-100 text-purple-600 px-2 py-0.5 rounded-full flex items-center gap-1">
+                Filter: {getFilterLabel()}
+                <button onClick={() => setFilterType('all')}>
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            </div>
+          )}
         </div>
-        <Filter className="w-4 h-4 text-gray-400 flex-shrink-0" />
+
+        {/* Bulk actions */}
+        {selectedEmails.length > 0 && (
+          <div className="flex items-center px-3 py-2 bg-purple-50 border-t border-purple-100 gap-3">
+            <span className="text-xs text-purple-700 flex-1">{selectedEmails.length} selected</span>
+            <button
+              className="text-xs text-yellow-600 bg-white border border-yellow-100 px-2.5 py-1 rounded-full"
+              onClick={() => {
+                selectedEmails.forEach((id) => toggleStar(id).unwrap().catch(() => {}));
+                setSelectedEmails([]);
+                refetch();
+              }}
+            >
+              Unstar
+            </button>
+            <button
+              className="text-xs text-gray-600 bg-white border border-gray-200 px-2.5 py-1 rounded-full"
+              onClick={() => {
+                selectedEmails.forEach((id) => toggleArchive(id).unwrap().catch(() => {}));
+                setSelectedEmails([]);
+                refetch();
+              }}
+            >
+              Archive
+            </button>
+            <button
+              className="text-xs text-red-600 bg-white border border-red-100 px-2.5 py-1 rounded-full"
+              onClick={() => {
+                selectedEmails.forEach((id) => deleteEmail(id).unwrap().catch(() => {}));
+                setSelectedEmails([]);
+                refetch();
+              }}
+            >
+              Delete
+            </button>
+            <button className="text-xs text-gray-400" onClick={() => setSelectedEmails([])}>
+              Cancel
+            </button>
+          </div>
+        )}
       </div>
 
-      {/* Bulk actions */}
-      {selectedEmails.length > 0 && (
-        <div className="flex items-center px-3 py-2 bg-purple-50 border-b border-purple-100 gap-3">
-          <span className="text-xs text-purple-700 flex-1">{selectedEmails.length} selected</span>
-          <button
-            className="text-xs text-yellow-600 bg-white border border-yellow-100 px-2.5 py-1 rounded-full"
-            onClick={() => {
-              selectedEmails.forEach((id) => toggleStar(id).unwrap().catch(() => {}));
-              setSelectedEmails([]);
-              refetch();
-            }}
-          >
-            Unstar
-          </button>
-          <button
-            className="text-xs text-gray-600 bg-white border border-gray-200 px-2.5 py-1 rounded-full"
-            onClick={() => {
-              selectedEmails.forEach((id) => toggleArchive(id).unwrap().catch(() => {}));
-              setSelectedEmails([]);
-              refetch();
-            }}
-          >
-            Archive
-          </button>
-          <button
-            className="text-xs text-red-600 bg-white border border-red-100 px-2.5 py-1 rounded-full"
-            onClick={() => {
-              selectedEmails.forEach((id) => deleteEmail(id).unwrap().catch(() => {}));
-              setSelectedEmails([]);
-              refetch();
-            }}
-          >
-            Delete
-          </button>
-          <button className="text-xs text-gray-400" onClick={() => setSelectedEmails([])}>
-            Cancel
-          </button>
-        </div>
-      )}
-
-      {/* Thread List */}
+      {/* Scrollable Thread List */}
       <div className="flex-1 overflow-y-auto">
         {groupedBySender.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-center px-6">
@@ -361,7 +430,7 @@ const Starred = () => {
   const DesktopView = () => (
     <div className="hidden md:flex flex-col h-screen bg-gray-50">
       {/* Header */}
-      <div className="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between">
+      <div className="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between sticky top-0 z-10">
         <h1 className="text-lg font-semibold text-gray-800">Starred</h1>
         <div className="flex items-center gap-3">
           <div className="relative">
@@ -374,7 +443,29 @@ const Starred = () => {
               className="pl-9 pr-4 py-1.5 bg-gray-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-400 w-64"
             />
           </div>
-          <Filter className="w-4 h-4 text-gray-400 cursor-pointer hover:text-gray-600" />
+          <div className="relative">
+            <button
+              onClick={() => setShowFilterMenu(!showFilterMenu)}
+              className={`p-1.5 rounded-lg transition ${filterType !== 'all' ? 'bg-purple-100 text-purple-600' : 'text-gray-400 hover:text-gray-600'}`}
+            >
+              <Filter className="w-4 h-4" />
+            </button>
+            {showFilterMenu && (
+              <div className="absolute right-0 top-full mt-1 w-48 bg-white rounded-lg shadow-lg border border-gray-100 z-20">
+                <div className="py-1">
+                  <button onClick={() => { setFilterType('all'); setShowFilterMenu(false); }} className={`w-full text-left px-3 py-2 text-sm ${filterType === 'all' ? 'bg-purple-50 text-purple-600' : 'text-gray-600 hover:bg-gray-50'}`}>
+                    All emails
+                  </button>
+                  <button onClick={() => { setFilterType('unread'); setShowFilterMenu(false); }} className={`w-full text-left px-3 py-2 text-sm ${filterType === 'unread' ? 'bg-purple-50 text-purple-600' : 'text-gray-600 hover:bg-gray-50'}`}>
+                    Unread only
+                  </button>
+                  <button onClick={() => { setFilterType('hasAttachments'); setShowFilterMenu(false); }} className={`w-full text-left px-3 py-2 text-sm ${filterType === 'hasAttachments' ? 'bg-purple-50 text-purple-600' : 'text-gray-600 hover:bg-gray-50'}`}>
+                    With attachments
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -467,7 +558,6 @@ const Starred = () => {
               </button>
 
               <div className="flex-1 grid grid-cols-12 gap-4 min-w-0 items-center">
-                {/* From */}
                 <div className="col-span-3 flex items-center gap-2 min-w-0">
                   {!email.isRead && <span className="w-2 h-2 rounded-full bg-purple-600 flex-shrink-0" />}
                   <span className={`text-sm truncate ${!email.isRead ? 'font-semibold text-gray-900' : 'text-gray-600'}`}>
@@ -475,7 +565,6 @@ const Starred = () => {
                   </span>
                 </div>
 
-                {/* Subject */}
                 <div className="col-span-4 flex items-center gap-1.5 min-w-0">
                   <span className={`text-sm truncate ${!email.isRead ? 'font-semibold text-gray-900' : 'text-gray-700'}`}>
                     {email.subject || '(No Subject)'}
@@ -485,29 +574,21 @@ const Starred = () => {
                   )}
                 </div>
 
-                {/* Preview */}
                 <div className="col-span-3 min-w-0">
                   <span className="text-sm text-gray-400 truncate block">
                     {getPlainText(email.content).slice(0, 80)}
                   </span>
                 </div>
 
-                {/* Date + Actions */}
                 <div className="col-span-2 flex items-center justify-end gap-2">
                   <span className={`text-xs whitespace-nowrap ${!email.isRead ? 'text-purple-600 font-medium' : 'text-gray-400'}`}>
                     {formatDate(email.receivedAt || email.createdAt)}
                   </span>
                   <div className="hidden group-hover:flex items-center gap-1">
-                    <button
-                      onClick={(e) => handleArchive(e, email.emailId)}
-                      className="p-1 text-gray-400 hover:text-gray-600 rounded"
-                    >
+                    <button onClick={(e) => handleArchive(e, email.emailId)} className="p-1 text-gray-400 hover:text-gray-600 rounded">
                       <Archive className="w-3.5 h-3.5" />
                     </button>
-                    <button
-                      onClick={(e) => handleDelete(e, email.emailId)}
-                      className="p-1 text-gray-400 hover:text-red-500 rounded"
-                    >
+                    <button onClick={(e) => handleDelete(e, email.emailId)} className="p-1 text-gray-400 hover:text-red-500 rounded">
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
                   </div>
@@ -525,19 +606,11 @@ const Starred = () => {
             Showing {(page - 1) * limit + 1}–{Math.min(page * limit, total)} of {total}
           </p>
           <div className="flex items-center gap-2">
-            <button
-              onClick={() => setPage((p) => p - 1)}
-              disabled={page === 1}
-              className="p-1.5 rounded-lg disabled:opacity-30 hover:bg-gray-100 transition"
-            >
+            <button onClick={() => setPage((p) => p - 1)} disabled={page === 1} className="p-1.5 rounded-lg disabled:opacity-30 hover:bg-gray-100 transition">
               <ChevronLeft className="w-4 h-4 text-gray-600" />
             </button>
             <span className="text-sm text-gray-500">{page} of {totalPages}</span>
-            <button
-              onClick={() => setPage((p) => p + 1)}
-              disabled={page === totalPages}
-              className="p-1.5 rounded-lg disabled:opacity-30 hover:bg-gray-100 transition"
-            >
+            <button onClick={() => setPage((p) => p + 1)} disabled={page === totalPages} className="p-1.5 rounded-lg disabled:opacity-30 hover:bg-gray-100 transition">
               <ChevronRight className="w-4 h-4 text-gray-600" />
             </button>
           </div>

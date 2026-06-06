@@ -21,7 +21,8 @@ import {
   ArchiveRestore,
   XCircle,
   Clock,
-  User
+  User,
+  X
 } from 'lucide-react';
 import { format } from 'date-fns';
 
@@ -30,13 +31,14 @@ const Trash = () => {
   const [page, setPage] = useState(1);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedEmails, setSelectedEmails] = useState([]);
+  const [showFilterMenu, setShowFilterMenu] = useState(false);
+  const [filterType, setFilterType] = useState('all');
   const limit = 20;
 
-  // Use folder='trash' to get only trashed emails
   const { data, isLoading, error, refetch } = useGetInboxQuery({ page, limit, folder: 'trash' });
   const [markAsRead] = useMarkAsReadMutation();
   const [toggleStar] = useToggleStarMutation();
-  const [deleteEmail] = useDeleteEmailMutation(); // Moves to trash
+  const [deleteEmail] = useDeleteEmailMutation();
   const [permanentlyDeleteEmail] = usePermanentlyDeleteEmailMutation();
   const [restoreEmail] = useRestoreEmailMutation();
 
@@ -87,22 +89,40 @@ const Trash = () => {
     return email.from?.email || 'Unknown';
   };
 
-  // Group by contact for mobile (WhatsApp style)
-  const groupedByContact = useMemo(() => {
-    const filtered = emails.filter((email) => {
+  // Apply filters to emails
+  const getFilteredEmails = (emailsToFilter) => {
+    let filtered = [...emailsToFilter];
+    
+    if (searchTerm) {
       const term = searchTerm.toLowerCase();
-      const contact = email.direction === 'sent' 
-        ? email.to?.some(t => t.email?.toLowerCase().includes(term))
-        : email.from?.email?.toLowerCase().includes(term);
-      return (
+      filtered = filtered.filter((email) =>
         email.subject?.toLowerCase().includes(term) ||
-        contact ||
+        (email.direction === 'sent' 
+          ? email.to?.some(t => t.email?.toLowerCase().includes(term))
+          : email.from?.email?.toLowerCase().includes(term)) ||
         getPlainText(email.content).toLowerCase().includes(term)
       );
-    });
+    }
+    
+    if (filterType === 'sent') {
+      filtered = filtered.filter((email) => email.direction === 'sent');
+    } else if (filterType === 'received') {
+      filtered = filtered.filter((email) => email.direction === 'received');
+    } else if (filterType === 'starred') {
+      filtered = filtered.filter((email) => email.isStarred);
+    } else if (filterType === 'hasAttachments') {
+      filtered = filtered.filter((email) => email.attachments?.length > 0);
+    }
+    
+    return filtered;
+  };
 
+  // Group by contact for mobile (WhatsApp style)
+  const groupedByContact = useMemo(() => {
+    const filteredEmails = getFilteredEmails(emails);
+    
     const map = new Map();
-    filtered.forEach((email) => {
+    filteredEmails.forEach((email) => {
       const key = email.direction === 'sent' 
         ? `to:${email.to?.[0]?.email || 'unknown'}`
         : `from:${email.from?.email || 'unknown'}`;
@@ -136,18 +156,11 @@ const Trash = () => {
     );
 
     return groups;
-  }, [emails, searchTerm]);
+  }, [emails, searchTerm, filterType]);
 
   const filteredEmails = useMemo(() => {
-    const term = searchTerm.toLowerCase();
-    return emails.filter(
-      (email) =>
-        email.subject?.toLowerCase().includes(term) ||
-        email.from?.email?.toLowerCase().includes(term) ||
-        email.to?.some((t) => t.email?.toLowerCase().includes(term)) ||
-        getPlainText(email.content).toLowerCase().includes(term)
-    );
-  }, [emails, searchTerm]);
+    return getFilteredEmails(emails);
+  }, [emails, searchTerm, filterType]);
 
   const handleThreadClick = (group) => {
     navigate(`/email/${group.latest.emailId}`);
@@ -159,23 +172,21 @@ const Trash = () => {
 
   const handleStarToggle = async (e, emailId) => {
     e.stopPropagation();
-    await toggleStar(emailId).unwrap();
+    await toggleStar(emailId).unwrap().catch(() => {});
     refetch();
     setSelectedEmails((prev) => prev.filter((id) => id !== emailId));
   };
 
-  // Handle restore from trash
   const handleRestore = async (e, emailId) => {
     e.stopPropagation();
-    await restoreEmail(emailId).unwrap();
+    await restoreEmail(emailId).unwrap().catch(() => {});
     refetch();
     setSelectedEmails((prev) => prev.filter((id) => id !== emailId));
   };
 
-  // Handle permanent delete from trash
   const handlePermanentDelete = async (e, emailId) => {
     e.stopPropagation();
-    await permanentlyDeleteEmail(emailId).unwrap();
+    await permanentlyDeleteEmail(emailId).unwrap().catch(() => {});
     refetch();
     setSelectedEmails((prev) => prev.filter((id) => id !== emailId));
   };
@@ -200,6 +211,16 @@ const Trash = () => {
       return <span className="text-xs text-purple-500">→</span>;
     }
     return <span className="text-xs text-blue-500">←</span>;
+  };
+
+  const getFilterLabel = () => {
+    switch (filterType) {
+      case 'sent': return 'Sent';
+      case 'received': return 'Received';
+      case 'starred': return 'Starred';
+      case 'hasAttachments': return 'Has Attachments';
+      default: return 'All';
+    }
   };
 
   if (isLoading && page === 1) {
@@ -234,60 +255,121 @@ const Trash = () => {
   // ─── MOBILE VIEW (WhatsApp Style) ─────────────────────────────────────────────
   const MobileView = () => (
     <div className="flex flex-col h-screen bg-white md:hidden">
-      {/* Top Bar */}
-      <div className="flex items-center px-3 pt-3 pb-2 gap-2 border-b border-gray-100">
-        <h1 className="text-base font-semibold text-gray-900 flex-shrink-0">Trash</h1>
-        <div className="relative flex-1">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
-          <input
-            type="text"
-            placeholder="Search"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-8 pr-3 py-1.5 bg-gray-100 rounded-full text-xs focus:outline-none focus:ring-2 focus:ring-red-400"
-          />
+      {/* Fixed Top Bar */}
+      <div className="sticky top-0 z-10 bg-white border-b border-gray-100">
+        <div className="px-3 pt-3 pb-2">
+          <div className="flex items-center gap-2">
+            <h1 className="text-base font-semibold text-gray-900 flex-shrink-0">Trash</h1>
+            <div className="relative flex-1">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Search"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-8 pr-3 py-1.5 bg-gray-100 rounded-full text-xs focus:outline-none focus:ring-2 focus:ring-red-400"
+              />
+            </div>
+            <div className="relative">
+              <button
+                onClick={() => setShowFilterMenu(!showFilterMenu)}
+                className={`p-1.5 rounded-full transition ${filterType !== 'all' ? 'bg-red-100 text-red-600' : 'text-gray-400'}`}
+              >
+                <Filter className="w-4 h-4" />
+              </button>
+              
+              {/* Filter Menu */}
+              {showFilterMenu && (
+                <div className="absolute right-0 top-full mt-2 w-40 bg-white rounded-lg shadow-lg border border-gray-100 z-20">
+                  <div className="py-1">
+                    <button
+                      onClick={() => { setFilterType('all'); setShowFilterMenu(false); }}
+                      className={`w-full text-left px-3 py-2 text-xs ${filterType === 'all' ? 'bg-red-50 text-red-600' : 'text-gray-600'}`}
+                    >
+                      All emails
+                    </button>
+                    <button
+                      onClick={() => { setFilterType('sent'); setShowFilterMenu(false); }}
+                      className={`w-full text-left px-3 py-2 text-xs ${filterType === 'sent' ? 'bg-red-50 text-red-600' : 'text-gray-600'}`}
+                    >
+                      Sent
+                    </button>
+                    <button
+                      onClick={() => { setFilterType('received'); setShowFilterMenu(false); }}
+                      className={`w-full text-left px-3 py-2 text-xs ${filterType === 'received' ? 'bg-red-50 text-red-600' : 'text-gray-600'}`}
+                    >
+                      Received
+                    </button>
+                    <button
+                      onClick={() => { setFilterType('starred'); setShowFilterMenu(false); }}
+                      className={`w-full text-left px-3 py-2 text-xs ${filterType === 'starred' ? 'bg-red-50 text-red-600' : 'text-gray-600'}`}
+                    >
+                      Starred
+                    </button>
+                    <button
+                      onClick={() => { setFilterType('hasAttachments'); setShowFilterMenu(false); }}
+                      className={`w-full text-left px-3 py-2 text-xs ${filterType === 'hasAttachments' ? 'bg-red-50 text-red-600' : 'text-gray-600'}`}
+                    >
+                      With attachments
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+          
+          {/* Active Filter Badge */}
+          {filterType !== 'all' && (
+            <div className="flex items-center mt-2">
+              <span className="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded-full flex items-center gap-1">
+                Filter: {getFilterLabel()}
+                <button onClick={() => setFilterType('all')}>
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            </div>
+          )}
         </div>
-        <Filter className="w-4 h-4 text-gray-400 flex-shrink-0" />
+
+        {/* Info Banner */}
+        <div className="mx-3 mt-2 p-2 bg-red-50 rounded-lg border border-red-100">
+          <p className="text-xs text-red-600 flex items-center gap-2">
+            <XCircle className="w-3.5 h-3.5" />
+            Emails will be automatically deleted after 30 days
+          </p>
+        </div>
+
+        {/* Bulk actions */}
+        {selectedEmails.length > 0 && (
+          <div className="flex items-center px-3 py-2 bg-red-50 border-t border-red-100 gap-3">
+            <span className="text-xs text-red-700 flex-1">{selectedEmails.length} selected</span>
+            <button
+              className="text-xs text-purple-600 bg-white border border-purple-100 px-2.5 py-1 rounded-full"
+              onClick={() => {
+                selectedEmails.forEach((id) => handleRestore(null, id));
+                setSelectedEmails([]);
+              }}
+            >
+              Restore
+            </button>
+            <button
+              className="text-xs text-red-600 bg-white border border-red-100 px-2.5 py-1 rounded-full"
+              onClick={() => {
+                selectedEmails.forEach((id) => handlePermanentDelete(null, id));
+                setSelectedEmails([]);
+                refetch();
+              }}
+            >
+              Delete Forever
+            </button>
+            <button className="text-xs text-gray-400" onClick={() => setSelectedEmails([])}>
+              Cancel
+            </button>
+          </div>
+        )}
       </div>
 
-      {/* Info Banner */}
-      <div className="mx-3 mt-2 p-2 bg-red-50 rounded-lg border border-red-100">
-        <p className="text-xs text-red-600 flex items-center gap-2">
-          <XCircle className="w-3.5 h-3.5" />
-          Emails will be automatically deleted after 30 days
-        </p>
-      </div>
-
-      {/* Bulk actions */}
-      {selectedEmails.length > 0 && (
-        <div className="flex items-center px-3 py-2 bg-red-50 border-b border-red-100 gap-3">
-          <span className="text-xs text-red-700 flex-1">{selectedEmails.length} selected</span>
-          <button
-            className="text-xs text-purple-600 bg-white border border-purple-100 px-2.5 py-1 rounded-full"
-            onClick={() => {
-              selectedEmails.forEach((id) => handleRestore(null, id));
-              setSelectedEmails([]);
-            }}
-          >
-            Restore
-          </button>
-          <button
-            className="text-xs text-red-600 bg-white border border-red-100 px-2.5 py-1 rounded-full"
-            onClick={() => {
-              selectedEmails.forEach((id) => handlePermanentDelete(null, id));
-              setSelectedEmails([]);
-              refetch();
-            }}
-          >
-            Delete Forever
-          </button>
-          <button className="text-xs text-gray-400" onClick={() => setSelectedEmails([])}>
-            Cancel
-          </button>
-        </div>
-      )}
-
-      {/* Thread List */}
+      {/* Scrollable Thread List */}
       <div className="flex-1 overflow-y-auto">
         {groupedByContact.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-center px-6">
@@ -390,7 +472,7 @@ const Trash = () => {
   const DesktopView = () => (
     <div className="hidden md:flex flex-col h-screen bg-gray-50">
       {/* Header */}
-      <div className="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between">
+      <div className="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between sticky top-0 z-10">
         <div className="flex items-center gap-2">
           <Trash2 className="w-5 h-5 text-red-500" />
           <h1 className="text-lg font-semibold text-gray-800">Trash</h1>
@@ -406,7 +488,35 @@ const Trash = () => {
               className="pl-9 pr-4 py-1.5 bg-gray-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-400 w-64"
             />
           </div>
-          <Filter className="w-4 h-4 text-gray-400 cursor-pointer hover:text-gray-600" />
+          <div className="relative">
+            <button
+              onClick={() => setShowFilterMenu(!showFilterMenu)}
+              className={`p-1.5 rounded-lg transition ${filterType !== 'all' ? 'bg-red-100 text-red-600' : 'text-gray-400 hover:text-gray-600'}`}
+            >
+              <Filter className="w-4 h-4" />
+            </button>
+            {showFilterMenu && (
+              <div className="absolute right-0 top-full mt-1 w-48 bg-white rounded-lg shadow-lg border border-gray-100 z-20">
+                <div className="py-1">
+                  <button onClick={() => { setFilterType('all'); setShowFilterMenu(false); }} className={`w-full text-left px-3 py-2 text-sm ${filterType === 'all' ? 'bg-red-50 text-red-600' : 'text-gray-600 hover:bg-gray-50'}`}>
+                    All emails
+                  </button>
+                  <button onClick={() => { setFilterType('sent'); setShowFilterMenu(false); }} className={`w-full text-left px-3 py-2 text-sm ${filterType === 'sent' ? 'bg-red-50 text-red-600' : 'text-gray-600 hover:bg-gray-50'}`}>
+                    Sent
+                  </button>
+                  <button onClick={() => { setFilterType('received'); setShowFilterMenu(false); }} className={`w-full text-left px-3 py-2 text-sm ${filterType === 'received' ? 'bg-red-50 text-red-600' : 'text-gray-600 hover:bg-gray-50'}`}>
+                    Received
+                  </button>
+                  <button onClick={() => { setFilterType('starred'); setShowFilterMenu(false); }} className={`w-full text-left px-3 py-2 text-sm ${filterType === 'starred' ? 'bg-red-50 text-red-600' : 'text-gray-600 hover:bg-gray-50'}`}>
+                    Starred
+                  </button>
+                  <button onClick={() => { setFilterType('hasAttachments'); setShowFilterMenu(false); }} className={`w-full text-left px-3 py-2 text-sm ${filterType === 'hasAttachments' ? 'bg-red-50 text-red-600' : 'text-gray-600 hover:bg-gray-50'}`}>
+                    With attachments
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 

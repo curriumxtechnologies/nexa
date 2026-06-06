@@ -55,7 +55,7 @@ const Login = () => {
     try {
       const result = await verify2FA({ userId, otp: otpCode }).unwrap();
       dispatch(setCredentials(result.data));
-      navigate('/dashboard');
+      navigate('/inbox');
     } catch (err) {
       setError(err.data?.message || 'Invalid 2FA code. Please try again.');
     }

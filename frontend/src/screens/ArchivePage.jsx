@@ -18,13 +18,11 @@ import {
   Loader2,
   Paperclip,
   AlertCircle,
-  CheckCircle,
-  Clock,
-  XCircle,
   Mail,
   MailOpen,
   User,
-  Inbox
+  Inbox,
+  X
 } from 'lucide-react';
 import { format } from 'date-fns';
 
@@ -33,9 +31,10 @@ const ArchivePage = () => {
   const [page, setPage] = useState(1);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedEmails, setSelectedEmails] = useState([]);
+  const [showFilterMenu, setShowFilterMenu] = useState(false);
+  const [filterType, setFilterType] = useState('all');
   const limit = 20;
 
-  // Use folder='archived' to get only archived emails
   const { data, isLoading, error, refetch } = useGetInboxQuery({ page, limit, folder: 'archived' });
   const [markAsRead] = useMarkAsReadMutation();
   const [toggleStar] = useToggleStarMutation();
@@ -76,19 +75,36 @@ const ArchivePage = () => {
     return colors[Math.abs(hash) % colors.length];
   };
 
-  // Group by sender for mobile (WhatsApp style)
-  const groupedBySender = useMemo(() => {
-    const filtered = emails.filter((email) => {
+  // Apply filters to emails
+  const getFilteredEmails = (emailsToFilter) => {
+    let filtered = [...emailsToFilter];
+    
+    if (searchTerm) {
       const term = searchTerm.toLowerCase();
-      return (
+      filtered = filtered.filter((email) =>
         email.subject?.toLowerCase().includes(term) ||
         email.from?.email?.toLowerCase().includes(term) ||
         getPlainText(email.content).toLowerCase().includes(term)
       );
-    });
+    }
+    
+    if (filterType === 'unread') {
+      filtered = filtered.filter((email) => !email.isRead);
+    } else if (filterType === 'starred') {
+      filtered = filtered.filter((email) => email.isStarred);
+    } else if (filterType === 'hasAttachments') {
+      filtered = filtered.filter((email) => email.attachments?.length > 0);
+    }
+    
+    return filtered;
+  };
 
+  // Group by sender for mobile (WhatsApp style)
+  const groupedBySender = useMemo(() => {
+    const filteredEmails = getFilteredEmails(emails);
+    
     const map = new Map();
-    filtered.forEach((email) => {
+    filteredEmails.forEach((email) => {
       const key = email.from?.email || 'unknown';
       if (!map.has(key)) map.set(key, []);
       map.get(key).push(email);
@@ -118,23 +134,16 @@ const ArchivePage = () => {
     );
 
     return groups;
-  }, [emails, searchTerm]);
+  }, [emails, searchTerm, filterType]);
 
   const filteredEmails = useMemo(() => {
-    const term = searchTerm.toLowerCase();
-    return emails.filter(
-      (email) =>
-        email.subject?.toLowerCase().includes(term) ||
-        email.from?.email?.toLowerCase().includes(term) ||
-        getPlainText(email.content).toLowerCase().includes(term)
-    );
-  }, [emails, searchTerm]);
+    return getFilteredEmails(emails);
+  }, [emails, searchTerm, filterType]);
 
   const handleThreadClick = async (group) => {
-    // Mark all unread emails in this thread as read
     const unreadEmails = group.emails.filter(email => !email.isRead);
     for (const email of unreadEmails) {
-      await markAsRead(email.emailId).unwrap();
+      await markAsRead(email.emailId).unwrap().catch(() => {});
     }
     refetch();
     navigate(`/email/${group.latest.emailId}`);
@@ -142,7 +151,7 @@ const ArchivePage = () => {
 
   const handleEmailClick = async (email) => {
     if (!email.isRead) {
-      await markAsRead(email.emailId).unwrap();
+      await markAsRead(email.emailId).unwrap().catch(() => {});
       refetch();
     }
     navigate(`/email/${email.emailId}`);
@@ -150,21 +159,21 @@ const ArchivePage = () => {
 
   const handleStarToggle = async (e, emailId) => {
     e.stopPropagation();
-    await toggleStar(emailId).unwrap();
+    await toggleStar(emailId).unwrap().catch(() => {});
     refetch();
     setSelectedEmails((prev) => prev.filter((id) => id !== emailId));
   };
 
   const handleUnarchive = async (e, emailId) => {
     e.stopPropagation();
-    await toggleArchive(emailId).unwrap();
+    await toggleArchive(emailId).unwrap().catch(() => {});
     refetch();
     setSelectedEmails((prev) => prev.filter((id) => id !== emailId));
   };
 
   const handleDelete = async (e, emailId) => {
     e.stopPropagation();
-    await deleteEmail(emailId).unwrap();
+    await deleteEmail(emailId).unwrap().catch(() => {});
     refetch();
     setSelectedEmails((prev) => prev.filter((id) => id !== emailId));
   };
@@ -184,16 +193,12 @@ const ArchivePage = () => {
     );
   };
 
-  const getStatusIcon = (status) => {
-    switch (status) {
-      case 'sent':
-        return <CheckCircle className="w-3 h-3 text-green-500" />;
-      case 'delivered':
-        return <CheckCircle className="w-3 h-3 text-blue-500" />;
-      case 'failed':
-        return <XCircle className="w-3 h-3 text-red-500" />;
-      default:
-        return <Clock className="w-3 h-3 text-gray-400" />;
+  const getFilterLabel = () => {
+    switch (filterType) {
+      case 'unread': return 'Unread';
+      case 'starred': return 'Starred';
+      case 'hasAttachments': return 'Has Attachments';
+      default: return 'All';
     }
   };
 
@@ -229,53 +234,108 @@ const ArchivePage = () => {
   // ─── MOBILE VIEW (WhatsApp Style) ─────────────────────────────────────────────
   const MobileView = () => (
     <div className="flex flex-col h-screen bg-white md:hidden">
-      {/* Top Bar */}
-      <div className="flex items-center px-3 pt-3 pb-2 gap-2 border-b border-gray-100">
-        <h1 className="text-base font-semibold text-gray-900 flex-shrink-0">Archive</h1>
-        <div className="relative flex-1">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
-          <input
-            type="text"
-            placeholder="Search"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-8 pr-3 py-1.5 bg-gray-100 rounded-full text-xs focus:outline-none focus:ring-2 focus:ring-purple-400"
-          />
+      {/* Fixed Top Bar */}
+      <div className="sticky top-0 z-10 bg-white border-b border-gray-100">
+        <div className="px-3 pt-3 pb-2">
+          <div className="flex items-center gap-2">
+            <h1 className="text-base font-semibold text-gray-900 flex-shrink-0">Archive</h1>
+            <div className="relative flex-1">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Search"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-8 pr-3 py-1.5 bg-gray-100 rounded-full text-xs focus:outline-none focus:ring-2 focus:ring-purple-400"
+              />
+            </div>
+            <div className="relative">
+              <button
+                onClick={() => setShowFilterMenu(!showFilterMenu)}
+                className={`p-1.5 rounded-full transition ${filterType !== 'all' ? 'bg-purple-100 text-purple-600' : 'text-gray-400'}`}
+              >
+                <Filter className="w-4 h-4" />
+              </button>
+              
+              {/* Filter Menu */}
+              {showFilterMenu && (
+                <div className="absolute right-0 top-full mt-2 w-40 bg-white rounded-lg shadow-lg border border-gray-100 z-20">
+                  <div className="py-1">
+                    <button
+                      onClick={() => { setFilterType('all'); setShowFilterMenu(false); }}
+                      className={`w-full text-left px-3 py-2 text-xs ${filterType === 'all' ? 'bg-purple-50 text-purple-600' : 'text-gray-600'}`}
+                    >
+                      All emails
+                    </button>
+                    <button
+                      onClick={() => { setFilterType('unread'); setShowFilterMenu(false); }}
+                      className={`w-full text-left px-3 py-2 text-xs ${filterType === 'unread' ? 'bg-purple-50 text-purple-600' : 'text-gray-600'}`}
+                    >
+                      Unread only
+                    </button>
+                    <button
+                      onClick={() => { setFilterType('starred'); setShowFilterMenu(false); }}
+                      className={`w-full text-left px-3 py-2 text-xs ${filterType === 'starred' ? 'bg-purple-50 text-purple-600' : 'text-gray-600'}`}
+                    >
+                      Starred only
+                    </button>
+                    <button
+                      onClick={() => { setFilterType('hasAttachments'); setShowFilterMenu(false); }}
+                      className={`w-full text-left px-3 py-2 text-xs ${filterType === 'hasAttachments' ? 'bg-purple-50 text-purple-600' : 'text-gray-600'}`}
+                    >
+                      With attachments
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+          
+          {/* Active Filter Badge */}
+          {filterType !== 'all' && (
+            <div className="flex items-center mt-2">
+              <span className="text-xs bg-purple-100 text-purple-600 px-2 py-0.5 rounded-full flex items-center gap-1">
+                Filter: {getFilterLabel()}
+                <button onClick={() => setFilterType('all')}>
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            </div>
+          )}
         </div>
-        <Filter className="w-4 h-4 text-gray-400 flex-shrink-0" />
+
+        {/* Bulk actions */}
+        {selectedEmails.length > 0 && (
+          <div className="flex items-center px-3 py-2 bg-purple-50 border-t border-purple-100 gap-3">
+            <span className="text-xs text-purple-700 flex-1">{selectedEmails.length} selected</span>
+            <button
+              className="text-xs text-purple-600 bg-white border border-purple-100 px-2.5 py-1 rounded-full"
+              onClick={() => {
+                selectedEmails.forEach((id) => toggleArchive(id).unwrap().catch(() => {}));
+                setSelectedEmails([]);
+                refetch();
+              }}
+            >
+              Unarchive
+            </button>
+            <button
+              className="text-xs text-red-600 bg-white border border-red-100 px-2.5 py-1 rounded-full"
+              onClick={() => {
+                selectedEmails.forEach((id) => deleteEmail(id).unwrap().catch(() => {}));
+                setSelectedEmails([]);
+                refetch();
+              }}
+            >
+              Delete
+            </button>
+            <button className="text-xs text-gray-400" onClick={() => setSelectedEmails([])}>
+              Cancel
+            </button>
+          </div>
+        )}
       </div>
 
-      {/* Bulk actions */}
-      {selectedEmails.length > 0 && (
-        <div className="flex items-center px-3 py-2 bg-purple-50 border-b border-purple-100 gap-3">
-          <span className="text-xs text-purple-700 flex-1">{selectedEmails.length} selected</span>
-          <button
-            className="text-xs text-purple-600 bg-white border border-purple-100 px-2.5 py-1 rounded-full"
-            onClick={() => {
-              selectedEmails.forEach((id) => toggleArchive(id).unwrap().catch(() => {}));
-              setSelectedEmails([]);
-              refetch();
-            }}
-          >
-            Unarchive
-          </button>
-          <button
-            className="text-xs text-red-600 bg-white border border-red-100 px-2.5 py-1 rounded-full"
-            onClick={() => {
-              selectedEmails.forEach((id) => deleteEmail(id).unwrap().catch(() => {}));
-              setSelectedEmails([]);
-              refetch();
-            }}
-          >
-            Delete
-          </button>
-          <button className="text-xs text-gray-400" onClick={() => setSelectedEmails([])}>
-            Cancel
-          </button>
-        </div>
-      )}
-
-      {/* Thread List */}
+      {/* Scrollable Thread List */}
       <div className="flex-1 overflow-y-auto">
         {groupedBySender.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-center px-6">
@@ -382,7 +442,7 @@ const ArchivePage = () => {
   const DesktopView = () => (
     <div className="hidden md:flex flex-col h-screen bg-gray-50">
       {/* Header */}
-      <div className="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between">
+      <div className="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between sticky top-0 z-10">
         <div className="flex items-center gap-2">
           <Archive className="w-5 h-5 text-purple-600" />
           <h1 className="text-lg font-semibold text-gray-800">Archive</h1>
@@ -398,7 +458,32 @@ const ArchivePage = () => {
               className="pl-9 pr-4 py-1.5 bg-gray-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-400 w-64"
             />
           </div>
-          <Filter className="w-4 h-4 text-gray-400 cursor-pointer hover:text-gray-600" />
+          <div className="relative">
+            <button
+              onClick={() => setShowFilterMenu(!showFilterMenu)}
+              className={`p-1.5 rounded-lg transition ${filterType !== 'all' ? 'bg-purple-100 text-purple-600' : 'text-gray-400 hover:text-gray-600'}`}
+            >
+              <Filter className="w-4 h-4" />
+            </button>
+            {showFilterMenu && (
+              <div className="absolute right-0 top-full mt-1 w-48 bg-white rounded-lg shadow-lg border border-gray-100 z-20">
+                <div className="py-1">
+                  <button onClick={() => { setFilterType('all'); setShowFilterMenu(false); }} className={`w-full text-left px-3 py-2 text-sm ${filterType === 'all' ? 'bg-purple-50 text-purple-600' : 'text-gray-600 hover:bg-gray-50'}`}>
+                    All emails
+                  </button>
+                  <button onClick={() => { setFilterType('unread'); setShowFilterMenu(false); }} className={`w-full text-left px-3 py-2 text-sm ${filterType === 'unread' ? 'bg-purple-50 text-purple-600' : 'text-gray-600 hover:bg-gray-50'}`}>
+                    Unread only
+                  </button>
+                  <button onClick={() => { setFilterType('starred'); setShowFilterMenu(false); }} className={`w-full text-left px-3 py-2 text-sm ${filterType === 'starred' ? 'bg-purple-50 text-purple-600' : 'text-gray-600 hover:bg-gray-50'}`}>
+                    Starred only
+                  </button>
+                  <button onClick={() => { setFilterType('hasAttachments'); setShowFilterMenu(false); }} className={`w-full text-left px-3 py-2 text-sm ${filterType === 'hasAttachments' ? 'bg-purple-50 text-purple-600' : 'text-gray-600 hover:bg-gray-50'}`}>
+                    With attachments
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -444,7 +529,7 @@ const ArchivePage = () => {
           <span className="col-span-3">From</span>
           <span className="col-span-3">Subject</span>
           <span className="col-span-3">Preview</span>
-          <span className="col-span-1">Status</span>
+          <span className="col-span-1">Star</span>
           <span className="col-span-2 text-right">Date</span>
         </div>
       </div>
