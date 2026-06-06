@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   useGetInboxQuery,
@@ -30,7 +30,7 @@ const Inbox = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedEmails, setSelectedEmails] = useState([]);
   const [showFilterMenu, setShowFilterMenu] = useState(false);
-  const [filterType, setFilterType] = useState('all'); // all, unread, starred, hasAttachments
+  const [filterType, setFilterType] = useState('all');
   const limit = 20;
 
   const { data, isLoading, error, refetch } = useGetInboxQuery({ page, limit, folder });
@@ -74,11 +74,10 @@ const Inbox = () => {
     return colors[Math.abs(hash) % colors.length];
   };
 
-  // Apply filters to emails
-  const getFilteredEmails = (emailsToFilter) => {
+  // Apply filters to emails - use useMemo but with stable dependencies
+  const getFilteredEmails = useCallback((emailsToFilter) => {
     let filtered = [...emailsToFilter];
     
-    // Apply search filter
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
       filtered = filtered.filter((email) =>
@@ -88,7 +87,6 @@ const Inbox = () => {
       );
     }
     
-    // Apply type filter
     if (filterType === 'unread') {
       filtered = filtered.filter((email) => !email.isRead);
     } else if (filterType === 'starred') {
@@ -98,7 +96,7 @@ const Inbox = () => {
     }
     
     return filtered;
-  };
+  }, [searchTerm, filterType]);
 
   // Group emails by sender for mobile (WhatsApp-style threads)
   const groupedBySender = useMemo(() => {
@@ -141,11 +139,17 @@ const Inbox = () => {
     );
 
     return groups;
-  }, [emails, searchTerm, filterType]);
+  }, [emails, getFilteredEmails]);
 
   const filteredEmails = useMemo(() => {
     return getFilteredEmails(emails);
-  }, [emails, searchTerm, filterType]);
+  }, [emails, getFilteredEmails]);
+
+  // Handle search input change - prevent re-render issues
+  const handleSearchChange = (e) => {
+    const value = e.target.value;
+    setSearchTerm(value);
+  };
 
   const handleThreadClick = async (group) => {
     for (const email of group.emails) {
@@ -256,7 +260,7 @@ const Inbox = () => {
                 type="text"
                 placeholder="Search"
                 value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                onChange={handleSearchChange}
                 className="w-full pl-8 pr-3 py-1.5 bg-gray-100 rounded-full text-xs focus:outline-none focus:ring-2 focus:ring-purple-400"
               />
             </div>
@@ -459,7 +463,7 @@ const Inbox = () => {
               type="text"
               placeholder="Search emails..."
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={handleSearchChange}
               className="pl-9 pr-4 py-1.5 bg-gray-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-400 w-64"
             />
           </div>
