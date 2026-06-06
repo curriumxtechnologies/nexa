@@ -4,6 +4,7 @@ import Email from '../models/emailModel.js';
 import TeamAccess from '../models/teamAccessModel.js';
 import { Resend } from 'resend';
 import { v4 as uuidv4 } from 'uuid';
+import { Webhook } from 'svix';
 
 // Generate random token
 const generateToken = () => {
@@ -1207,19 +1208,30 @@ const sendEmail = async (req, res) => {
 // Receive email (webhook from Resend)
 const receiveEmail = async (req, res) => {
   try {
+    // Verify webhook signature
+    const webhookSecret = process.env.RESEND_WEBHOOK_SECRET;
+    if (webhookSecret) {
+      const wh = new Webhook(webhookSecret);
+      try {
+        wh.verify(JSON.stringify(req.body), {
+          'svix-id': req.headers['svix-id'],
+          'svix-timestamp': req.headers['svix-timestamp'],
+          'svix-signature': req.headers['svix-signature'],
+        });
+      } catch (err) {
+        return res.status(401).json({
+          success: false,
+          message: 'Invalid webhook signature'
+        });
+      }
+    }
+
     const payload = req.body;
 
     // Resend webhook sends data nested under 'data'
     const emailPayload = payload.data || payload;
 
-    const {
-      to,
-      from,
-      subject,
-      html,
-      text,
-      attachments
-    } = emailPayload;
+    const { to, from, subject, html, text, attachments } = emailPayload;
 
     // Get the recipient email address
     const toEmail = Array.isArray(to) ? to[0] : to;
@@ -1232,9 +1244,9 @@ const receiveEmail = async (req, res) => {
     }
 
     // Find which custom email this belongs to
-    const customEmail = await CustomEmail.findOne({ 
-      email: toEmail.toLowerCase(), 
-      isActive: true 
+    const customEmail = await CustomEmail.findOne({
+      email: toEmail.toLowerCase(),
+      isActive: true
     });
 
     if (!customEmail) {
@@ -1309,9 +1321,9 @@ const receiveEmail = async (req, res) => {
     if (customEmail.forwardToEmail) {
       const resendConfig = user.resendConfigs.find(
         c => (c.id === customEmail.resendConfigId ||
-        c._id?.toString() === customEmail.resendConfigId?.toString())
-        && c.isVerified
-        && c.isActive
+          c._id?.toString() === customEmail.resendConfigId?.toString())
+          && c.isVerified
+          && c.isActive
       );
 
       if (resendConfig) {
@@ -1332,7 +1344,6 @@ const receiveEmail = async (req, res) => {
             `
           });
         } catch (forwardError) {
-          // Don't fail the webhook if forwarding fails
           console.error('Email forwarding failed:', forwardError.message);
         }
       }
