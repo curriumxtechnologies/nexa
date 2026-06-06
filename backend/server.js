@@ -33,7 +33,17 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
+// Health check - handles ALL methods including HEAD
+app.get("/", (req, res) => {
+  res.status(200).json({
+    success: true,
+    message: "Nexa API is running 🚀",
+  });
+});
 
+app.head("/", (req, res) => {
+  res.sendStatus(200);
+});
 
 //Routing
 app.use('/api/auth', authRoutes);

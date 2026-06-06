@@ -13,13 +13,11 @@ webpush.setVapidDetails(
 // Configure Firebase (for mobile)
 if (process.env.FIREBASE_PRIVATE_KEY) {
   try {
-    let privateKey = process.env.FIREBASE_PRIVATE_KEY;
-    
-    // Handle both formats
-    if (!privateKey.includes('\n')) {
-      privateKey = privateKey.replace(/\\n/g, '\n');
-    }
-    
+    const privateKey = process.env.FIREBASE_PRIVATE_KEY
+      .replace(/\\n/g, '\n')  // convert literal \n to actual newlines
+      .replace(/^["']|["']$/g, '') // strip any quotes coolify adds
+      .trim();
+
     admin.initializeApp({
       credential: admin.credential.cert({
         projectId: process.env.FIREBASE_PROJECT_ID,
