@@ -11,6 +11,7 @@ export const emailApiSlice = apiSlice.injectEndpoints({
                 method: 'POST',
                 body: data,
             }),
+            invalidatesTags: ['ResendConfig', 'Domain'],
         }),
 
         getResendConfigs: builder.query({
@@ -18,13 +19,25 @@ export const emailApiSlice = apiSlice.injectEndpoints({
                 url: `${EMAIL_URL}/resend/configs`,
                 method: 'GET',
             }),
+            providesTags: ['ResendConfig'],
         }),
 
-        verifyDomain: builder.mutation({
-            query: (token) => ({
-                url: `${EMAIL_URL}/verify-domain/${token}`,
+        // Webhook Management
+        addWebhookSecret: builder.mutation({
+            query: (data) => ({
+                url: `${EMAIL_URL}/webhook/secret`,
+                method: 'POST',
+                body: data,
+            }),
+            invalidatesTags: ['ResendConfig'],
+        }),
+
+        getWebhookConfig: builder.query({
+            query: (resendConfigId) => ({
+                url: `${EMAIL_URL}/webhook/secret/${resendConfigId}`,
                 method: 'GET',
             }),
+            providesTags: ['ResendConfig'],
         }),
 
         // Custom Email Management
@@ -34,6 +47,7 @@ export const emailApiSlice = apiSlice.injectEndpoints({
                 method: 'POST',
                 body: data,
             }),
+            invalidatesTags: ['CustomEmail'],
         }),
 
         getCustomEmails: builder.query({
@@ -41,6 +55,7 @@ export const emailApiSlice = apiSlice.injectEndpoints({
                 url: `${EMAIL_URL}/custom-emails${resendConfigId ? `?resendConfigId=${resendConfigId}` : ''}`,
                 method: 'GET',
             }),
+            providesTags: ['CustomEmail'],
         }),
 
         // Team Access
@@ -50,6 +65,7 @@ export const emailApiSlice = apiSlice.injectEndpoints({
                 method: 'POST',
                 body: data,
             }),
+            invalidatesTags: ['TeamAccess'],
         }),
 
         acceptInvitation: builder.mutation({
@@ -57,6 +73,7 @@ export const emailApiSlice = apiSlice.injectEndpoints({
                 url: `${EMAIL_URL}/accept-invitation/${token}`,
                 method: 'POST',
             }),
+            invalidatesTags: ['TeamAccess', 'CustomEmail'],
         }),
 
         getDomainAccessUsers: builder.query({
@@ -64,6 +81,7 @@ export const emailApiSlice = apiSlice.injectEndpoints({
                 url: `${EMAIL_URL}/domain-access/${resendConfigId}`,
                 method: 'GET',
             }),
+            providesTags: ['TeamAccess'],
         }),
 
         updateUserAccess: builder.mutation({
@@ -72,6 +90,7 @@ export const emailApiSlice = apiSlice.injectEndpoints({
                 method: 'PUT',
                 body: data,
             }),
+            invalidatesTags: ['TeamAccess'],
         }),
 
         revokeUserAccess: builder.mutation({
@@ -79,6 +98,7 @@ export const emailApiSlice = apiSlice.injectEndpoints({
                 url: `${EMAIL_URL}/access/${accessId}`,
                 method: 'DELETE',
             }),
+            invalidatesTags: ['TeamAccess'],
         }),
 
         getAccessibleDomains: builder.query({
@@ -86,6 +106,7 @@ export const emailApiSlice = apiSlice.injectEndpoints({
                 url: `${EMAIL_URL}/accessible-domains`,
                 method: 'GET',
             }),
+            providesTags: ['TeamAccess', 'Domain'],
         }),
 
         // Email Operations
@@ -95,6 +116,7 @@ export const emailApiSlice = apiSlice.injectEndpoints({
                 method: 'POST',
                 body: data,
             }),
+            invalidatesTags: ['SentEmails', 'EmailStats'],
         }),
 
         getInbox: builder.query({
@@ -102,6 +124,7 @@ export const emailApiSlice = apiSlice.injectEndpoints({
                 url: `${EMAIL_URL}/inbox?page=${page}&limit=${limit}&folder=${folder}`,
                 method: 'GET',
             }),
+            providesTags: ['Inbox'],
         }),
 
         getSentEmails: builder.query({
@@ -109,6 +132,7 @@ export const emailApiSlice = apiSlice.injectEndpoints({
                 url: `${EMAIL_URL}/sent?page=${page}&limit=${limit}`,
                 method: 'GET',
             }),
+            providesTags: ['SentEmails'],
         }),
 
         getEmailById: builder.query({
@@ -116,6 +140,7 @@ export const emailApiSlice = apiSlice.injectEndpoints({
                 url: `${EMAIL_URL}/email/${emailId}`,
                 method: 'GET',
             }),
+            providesTags: (result, error, emailId) => [{ type: 'Email', id: emailId }],
         }),
 
         markAsRead: builder.mutation({
@@ -123,6 +148,11 @@ export const emailApiSlice = apiSlice.injectEndpoints({
                 url: `${EMAIL_URL}/email/${emailId}/read`,
                 method: 'PUT',
             }),
+            invalidatesTags: (result, error, emailId) => [
+                { type: 'Email', id: emailId },
+                'Inbox',
+                'EmailStats',
+            ],
         }),
 
         toggleStar: builder.mutation({
@@ -130,6 +160,10 @@ export const emailApiSlice = apiSlice.injectEndpoints({
                 url: `${EMAIL_URL}/email/${emailId}/star`,
                 method: 'PUT',
             }),
+            invalidatesTags: (result, error, emailId) => [
+                { type: 'Email', id: emailId },
+                'Inbox',
+            ],
         }),
 
         toggleArchive: builder.mutation({
@@ -137,13 +171,52 @@ export const emailApiSlice = apiSlice.injectEndpoints({
                 url: `${EMAIL_URL}/email/${emailId}/archive`,
                 method: 'PUT',
             }),
+            invalidatesTags: (result, error, emailId) => [
+                { type: 'Email', id: emailId },
+                'Inbox',
+            ],
         }),
 
+        // Move email to trash
         deleteEmail: builder.mutation({
             query: (emailId) => ({
                 url: `${EMAIL_URL}/email/${emailId}`,
                 method: 'DELETE',
             }),
+            invalidatesTags: (result, error, emailId) => [
+                { type: 'Email', id: emailId },
+                'Inbox',
+                'SentEmails',
+                'EmailStats',
+            ],
+        }),
+
+        // Permanently delete email from trash
+        permanentlyDeleteEmail: builder.mutation({
+            query: (emailId) => ({
+                url: `${EMAIL_URL}/email/${emailId}/permanent`,
+                method: 'DELETE',
+            }),
+            invalidatesTags: (result, error, emailId) => [
+                { type: 'Email', id: emailId },
+                'Inbox',
+                'SentEmails',
+                'EmailStats',
+            ],
+        }),
+
+        // Restore email from trash back to inbox
+        restoreEmail: builder.mutation({
+            query: (emailId) => ({
+                url: `${EMAIL_URL}/email/${emailId}/restore`,
+                method: 'PUT',
+            }),
+            invalidatesTags: (result, error, emailId) => [
+                { type: 'Email', id: emailId },
+                'Inbox',
+                'SentEmails',
+                'EmailStats',
+            ],
         }),
 
         getEmailStats: builder.query({
@@ -151,6 +224,7 @@ export const emailApiSlice = apiSlice.injectEndpoints({
                 url: `${EMAIL_URL}/stats`,
                 method: 'GET',
             }),
+            providesTags: ['EmailStats'],
         }),
     }),
 });
@@ -159,7 +233,8 @@ export const emailApiSlice = apiSlice.injectEndpoints({
 export const {
     useAddResendConfigMutation,
     useGetResendConfigsQuery,
-    useVerifyDomainMutation,
+    useAddWebhookSecretMutation,
+    useGetWebhookConfigQuery,
     useCreateCustomEmailMutation,
     useGetCustomEmailsQuery,
     useInviteUserToDomainMutation,
@@ -176,5 +251,7 @@ export const {
     useToggleStarMutation,
     useToggleArchiveMutation,
     useDeleteEmailMutation,
+    usePermanentlyDeleteEmailMutation,
+    useRestoreEmailMutation,
     useGetEmailStatsQuery,
 } = emailApiSlice;

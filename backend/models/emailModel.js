@@ -184,6 +184,11 @@ const emailSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
+  // ADD THIS - Read flag for frontend
+  isRead: {
+    type: Boolean,
+    default: false
+  },
   labels: [{
     type: String,
     trim: true
@@ -209,6 +214,7 @@ emailSchema.index({ userId: 1, isStarred: 1 });
 emailSchema.index({ userId: 1, isArchived: 1 });
 emailSchema.index({ userId: 1, isTrashed: 1 });
 emailSchema.index({ userId: 1, status: 1 });
+emailSchema.index({ userId: 1, isRead: 1 }); // ADD THIS INDEX
 emailSchema.index({ 'from.email': 1 });
 emailSchema.index({ 'to.email': 1 });
 emailSchema.index({ replyToEmailId: 1 });

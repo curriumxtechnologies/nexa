@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { useGetProfileQuery, useUpdateProfileMutation, useChangePasswordMutation, useToggleUser2FAMutation } from '../slices/userApiSlice';
-import { logout } from '../slices/authSlice';
+import { setCredentials, logout } from '../slices/authSlice';
 import { 
   User, 
   Mail, 
@@ -15,7 +15,11 @@ import {
   CheckCircle,
   AlertCircle,
   Calendar,
-  LogOut
+  LogOut,
+  ChevronRight,
+  Edit2,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 import { format } from 'date-fns';
 
@@ -42,20 +46,14 @@ const Profile = () => {
   const [profilePreview, setProfilePreview] = useState(null);
   const [isEditing, setIsEditing] = useState(false);
   const [isChangingPass, setIsChangingPass] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [show2FAModal, setShow2FAModal] = useState(false);
 
-  // Use profileData from API or fallback to userInfo from Redux
-  // Check the actual structure of your data
   const user = profileData?.data || userInfo?.user || userInfo;
-
-  console.log('Profile Data:', profileData);
-  console.log('User Info from Redux:', userInfo);
-  console.log('Final user object:', user);
-  console.log('User name:', user?.name);
-  console.log('User email:', user?.email);
-  console.log('User phone:', user?.phoneNumber);
 
   useEffect(() => {
     if (user) {
@@ -173,6 +171,7 @@ const Profile = () => {
       refetch();
       setShow2FAModal(false);
       setSuccess(`2FA ${!user?.isTwoFactorEnabled ? 'enabled' : 'disabled'} successfully`);
+      setTimeout(() => setSuccess(''), 3000);
     } catch (err) {
       setError(err.data?.message || 'Failed to toggle 2FA');
     }
@@ -208,17 +207,12 @@ const Profile = () => {
   };
 
   if (profileError) {
-    console.error('Profile fetch error:', profileError);
     return (
-      <div className="flex items-center justify-center h-screen bg-gray-50">
+      <div className="flex items-center justify-center min-h-[60vh]">
         <div className="text-center">
-          <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
+          <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-3" />
           <p className="text-red-500 mb-2">Failed to load profile</p>
-          <p className="text-gray-500 text-sm">Please try again later</p>
-          <button 
-            onClick={() => refetch()}
-            className="mt-4 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
-          >
+          <button onClick={() => refetch()} className="mt-2 px-4 py-2 bg-purple-600 text-white text-sm rounded-lg">
             Retry
           </button>
         </div>
@@ -228,391 +222,536 @@ const Profile = () => {
 
   if (profileLoading) {
     return (
-      <div className="flex items-center justify-center h-screen bg-gray-50">
+      <div className="flex items-center justify-center min-h-[60vh]">
         <div className="text-center">
-          <Loader2 className="w-12 h-12 text-purple-600 animate-spin mx-auto mb-4" />
-          <p className="text-gray-500">Loading profile...</p>
+          <Loader2 className="w-10 h-10 text-purple-600 animate-spin mx-auto mb-3" />
+          <p className="text-sm text-gray-400">Loading profile...</p>
         </div>
       </div>
     );
   }
 
-  return (
-    <div className="min-h-screen bg-gray-50">
+  // Mobile View
+  const MobileView = () => (
+    <div className="md:hidden bg-gray-50 min-h-screen pb-20">
       {/* Header */}
-      <div className="bg-white border-b border-gray-200 sticky top-0 z-10">
-        <div className="px-4 py-4 lg:px-6">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-2">
-              <User className="w-6 h-6 text-purple-600" />
-              <h1 className="text-xl font-semibold text-gray-800">Profile</h1>
-            </div>
-            <div className="flex items-center space-x-2">
-              {!isEditing && !isChangingPass && (
-                <>
-                  <button
-                    onClick={() => setIsEditing(true)}
-                    className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition"
-                  >
-                    Edit Profile
-                  </button>
-                  <button
-                    onClick={handleLogout}
-                    className="px-4 py-2 border border-red-300 text-red-600 rounded-lg hover:bg-red-50 transition flex items-center space-x-2"
-                  >
-                    <LogOut className="w-4 h-4" />
-                    <span>Logout</span>
-                  </button>
-                </>
-              )}
-            </div>
+      <div className="bg-white border-b border-gray-100 px-4 py-3 sticky top-0 z-10">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-2">
+            <User className="w-5 h-5 text-purple-600" />
+            <h1 className="text-base font-semibold text-gray-800">Profile</h1>
           </div>
+          {!isEditing && !isChangingPass && (
+            <button onClick={() => setIsEditing(true)} className="text-purple-600 text-sm">
+              Edit
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Content */}
-      <div className="px-4 py-6 lg:px-6">
-        <div className="max-w-3xl mx-auto">
-          {/* Profile Card */}
-          <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-            {/* Cover / Profile Header */}
-            <div className="bg-gradient-to-r from-purple-600 to-purple-800 h-32 relative">
-              <div className="absolute -bottom-12 left-6">
-                <div className="relative">
-                  {isEditing ? (
-                    <label className="cursor-pointer">
-                      <div className="w-24 h-24 rounded-full bg-purple-100 flex items-center justify-center border-4 border-white shadow-lg overflow-hidden">
-                        {profilePreview ? (
-                          <img
-                            src={profilePreview}
-                            alt="Profile"
-                            className="w-full h-full object-cover"
-                          />
-                        ) : (
-                          <Camera className="w-8 h-8 text-purple-600" />
-                        )}
-                      </div>
-                      <div className="absolute bottom-0 right-0 bg-purple-600 rounded-full p-1 border-2 border-white">
-                        <Camera className="w-3 h-3 text-white" />
-                      </div>
-                      <input
-                        type="file"
-                        accept="image/*"
-                        onChange={handleFileChange}
-                        className="hidden"
-                      />
-                    </label>
+      <div className="px-4 py-4">
+        {error && (
+          <div className="mb-4 p-2 bg-red-50 rounded-lg flex items-center space-x-2">
+            <AlertCircle className="w-4 h-4 text-red-500" />
+            <p className="text-xs text-red-600">{error}</p>
+          </div>
+        )}
+
+        {success && (
+          <div className="mb-4 p-2 bg-green-50 rounded-lg flex items-center space-x-2">
+            <CheckCircle className="w-4 h-4 text-green-500" />
+            <p className="text-xs text-green-600">{success}</p>
+          </div>
+        )}
+
+        {/* Profile Header */}
+        <div className="flex flex-col items-center mb-6">
+          <div className="relative">
+            {isEditing ? (
+              <label className="cursor-pointer">
+                <div className="w-20 h-20 rounded-full bg-purple-100 flex items-center justify-center border-3 border-white shadow-md overflow-hidden">
+                  {profilePreview ? (
+                    <img src={profilePreview} alt="Profile" className="w-full h-full object-cover" />
                   ) : (
-                    <div className="w-24 h-24 rounded-full bg-purple-100 flex items-center justify-center border-4 border-white shadow-lg overflow-hidden">
-                      {profilePreview ? (
-                        <img
-                          src={profilePreview}
-                          alt="Profile"
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        <User className="w-12 h-12 text-purple-600" />
-                      )}
-                    </div>
+                    <Camera className="w-6 h-6 text-purple-600" />
                   )}
                 </div>
+                <div className="absolute bottom-0 right-0 bg-purple-600 rounded-full p-1 border-2 border-white">
+                  <Camera className="w-3 h-3 text-white" />
+                </div>
+                <input type="file" accept="image/*" onChange={handleFileChange} className="hidden" />
+              </label>
+            ) : (
+              <div className="w-20 h-20 rounded-full bg-purple-100 flex items-center justify-center shadow-md overflow-hidden">
+                {profilePreview ? (
+                  <img src={profilePreview} alt="Profile" className="w-full h-full object-cover" />
+                ) : (
+                  <User className="w-8 h-8 text-purple-600" />
+                )}
+              </div>
+            )}
+          </div>
+          <h2 className="text-base font-semibold text-gray-800 mt-2">{user?.name || 'User'}</h2>
+          <p className="text-xs text-gray-400">{user?.email}</p>
+        </div>
+
+        {isEditing ? (
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <label className="text-xs font-medium text-gray-500">Full Name</label>
+              <input
+                type="text"
+                name="name"
+                value={formData.name}
+                onChange={handleChange}
+                className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-purple-400 outline-none"
+                required
+              />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-gray-500">Phone Number</label>
+              <input
+                type="tel"
+                name="phoneNumber"
+                value={formData.phoneNumber || ''}
+                onChange={handleChange}
+                className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-purple-400 outline-none"
+                placeholder="Not provided"
+              />
+            </div>
+            <div className="flex space-x-3 pt-2">
+              <button type="button" onClick={handleCancel} className="flex-1 px-3 py-2 border border-gray-200 text-gray-600 text-sm rounded-lg">
+                Cancel
+              </button>
+              <button type="submit" disabled={isUpdating} className="flex-1 px-3 py-2 bg-purple-600 text-white text-sm rounded-lg disabled:opacity-50">
+                {isUpdating ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'Save'}
+              </button>
+            </div>
+          </form>
+        ) : isChangingPass ? (
+          <form onSubmit={handlePasswordSubmit} className="space-y-4">
+            <div>
+              <label className="text-xs font-medium text-gray-500">Current Password</label>
+              <div className="relative">
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  name="currentPassword"
+                  value={passwordData.currentPassword}
+                  onChange={handlePasswordChange}
+                  className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-purple-400 outline-none pr-9"
+                  required
+                />
+                <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2">
+                  {showPassword ? <EyeOff className="w-4 h-4 text-gray-400" /> : <Eye className="w-4 h-4 text-gray-400" />}
+                </button>
+              </div>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-gray-500">New Password</label>
+              <div className="relative">
+                <input
+                  type={showNewPassword ? 'text' : 'password'}
+                  name="newPassword"
+                  value={passwordData.newPassword}
+                  onChange={handlePasswordChange}
+                  className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-purple-400 outline-none pr-9"
+                  required
+                />
+                <button type="button" onClick={() => setShowNewPassword(!showNewPassword)} className="absolute right-3 top-1/2 -translate-y-1/2">
+                  {showNewPassword ? <EyeOff className="w-4 h-4 text-gray-400" /> : <Eye className="w-4 h-4 text-gray-400" />}
+                </button>
+              </div>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-gray-500">Confirm Password</label>
+              <div className="relative">
+                <input
+                  type={showConfirmPassword ? 'text' : 'password'}
+                  name="confirmPassword"
+                  value={passwordData.confirmPassword}
+                  onChange={handlePasswordChange}
+                  className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-purple-400 outline-none pr-9"
+                  required
+                />
+                <button type="button" onClick={() => setShowConfirmPassword(!showConfirmPassword)} className="absolute right-3 top-1/2 -translate-y-1/2">
+                  {showConfirmPassword ? <EyeOff className="w-4 h-4 text-gray-400" /> : <Eye className="w-4 h-4 text-gray-400" />}
+                </button>
+              </div>
+            </div>
+            <div className="flex space-x-3 pt-2">
+              <button type="button" onClick={handleCancelPassword} className="flex-1 px-3 py-2 border border-gray-200 text-gray-600 text-sm rounded-lg">
+                Cancel
+              </button>
+              <button type="submit" disabled={isChangingPassword} className="flex-1 px-3 py-2 bg-purple-600 text-white text-sm rounded-lg disabled:opacity-50">
+                {isChangingPassword ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'Update'}
+              </button>
+            </div>
+          </form>
+        ) : (
+          <>
+            {/* Info Cards */}
+            <div className="space-y-3">
+              <div className="bg-white rounded-lg border border-gray-100 p-3 flex items-center justify-between">
+                <div className="flex items-center space-x-3">
+                  <div className="w-8 h-8 bg-purple-50 rounded-full flex items-center justify-center">
+                    <User className="w-4 h-4 text-purple-600" />
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-400">Name</p>
+                    <p className="text-sm font-medium text-gray-800">{user?.name || 'Not provided'}</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-white rounded-lg border border-gray-100 p-3 flex items-center justify-between">
+                <div className="flex items-center space-x-3">
+                  <div className="w-8 h-8 bg-purple-50 rounded-full flex items-center justify-center">
+                    <Mail className="w-4 h-4 text-purple-600" />
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-400">Email</p>
+                    <p className="text-sm font-medium text-gray-800">{user?.email || 'Not provided'}</p>
+                  </div>
+                </div>
+                {user?.isEmailVerified ? (
+                  <CheckCircle className="w-4 h-4 text-green-500" />
+                ) : (
+                  <AlertCircle className="w-4 h-4 text-yellow-500" />
+                )}
+              </div>
+
+              <div className="bg-white rounded-lg border border-gray-100 p-3 flex items-center justify-between">
+                <div className="flex items-center space-x-3">
+                  <div className="w-8 h-8 bg-purple-50 rounded-full flex items-center justify-center">
+                    <Phone className="w-4 h-4 text-purple-600" />
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-400">Phone</p>
+                    <p className="text-sm font-medium text-gray-800">{user?.phoneNumber || 'Not provided'}</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-white rounded-lg border border-gray-100 p-3 flex items-center justify-between">
+                <div className="flex items-center space-x-3">
+                  <div className="w-8 h-8 bg-purple-50 rounded-full flex items-center justify-center">
+                    <Calendar className="w-4 h-4 text-purple-600" />
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-400">Member Since</p>
+                    <p className="text-sm font-medium text-gray-800">
+                      {user?.createdAt ? format(new Date(user.createdAt), 'MMM d, yyyy') : 'Not available'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-white rounded-lg border border-gray-100 p-3 flex items-center justify-between">
+                <div className="flex items-center space-x-3">
+                  <div className="w-8 h-8 bg-purple-50 rounded-full flex items-center justify-center">
+                    <Shield className="w-4 h-4 text-purple-600" />
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-400">2-Step Verification</p>
+                    <p className="text-sm font-medium text-gray-800">{user?.isTwoFactorEnabled ? 'Enabled' : 'Disabled'}</p>
+                  </div>
+                </div>
+                <button onClick={() => setShow2FAModal(true)} className="text-purple-600">
+                  <ChevronRight className="w-4 h-4" />
+                </button>
               </div>
             </div>
 
-            {/* Profile Info */}
+            {/* Action Buttons */}
+            <div className="mt-6 space-y-2">
+              <button
+                onClick={() => setIsChangingPass(true)}
+                className="w-full flex items-center justify-center space-x-2 px-4 py-2 border border-gray-200 text-gray-700 text-sm rounded-lg"
+              >
+                <Lock className="w-4 h-4" />
+                <span>Change Password</span>
+              </button>
+              <button
+                onClick={handleLogout}
+                className="w-full flex items-center justify-center space-x-2 px-4 py-2 bg-red-50 text-red-600 text-sm rounded-lg"
+              >
+                <LogOut className="w-4 h-4" />
+                <span>Logout</span>
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+
+  // Desktop View
+  const DesktopView = () => (
+    <div className="hidden md:block min-h-screen bg-gray-50">
+      <div className="px-6 py-6 lg:px-8">
+        <div className="max-w-4xl mx-auto">
+          {/* Header */}
+          <div className="mb-6">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <div className="p-1.5 bg-purple-50 rounded-lg">
+                  <User className="w-5 h-5 text-purple-600" />
+                </div>
+                <div>
+                  <h1 className="text-lg font-semibold text-gray-800">Profile</h1>
+                  <p className="text-xs text-gray-400">Manage your account information</p>
+                </div>
+              </div>
+              {!isEditing && !isChangingPass && (
+                <button onClick={() => setIsEditing(true)} className="flex items-center space-x-1 px-3 py-1.5 bg-purple-600 text-white text-sm rounded-lg">
+                  <Edit2 className="w-4 h-4" />
+                  <span>Edit Profile</span>
+                </button>
+              )}
+            </div>
+          </div>
+
+          {error && (
+            <div className="mb-4 p-3 bg-red-50 rounded-lg flex items-center space-x-2">
+              <AlertCircle className="w-4 h-4 text-red-500" />
+              <p className="text-sm text-red-600">{error}</p>
+            </div>
+          )}
+
+          {success && (
+            <div className="mb-4 p-3 bg-green-50 rounded-lg flex items-center space-x-2">
+              <CheckCircle className="w-4 h-4 text-green-500" />
+              <p className="text-sm text-green-600">{success}</p>
+            </div>
+          )}
+
+          <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+            {/* Profile Header */}
+            <div className="bg-gradient-to-r from-purple-600 to-purple-800 px-6 py-8 relative">
+              <div className="absolute -bottom-12 left-6">
+                {isEditing ? (
+                  <label className="cursor-pointer">
+                    <div className="w-24 h-24 rounded-full bg-white flex items-center justify-center border-4 border-white shadow-lg overflow-hidden">
+                      {profilePreview ? (
+                        <img src={profilePreview} alt="Profile" className="w-full h-full object-cover" />
+                      ) : (
+                        <Camera className="w-8 h-8 text-purple-600" />
+                      )}
+                    </div>
+                    <div className="absolute bottom-0 right-0 bg-purple-600 rounded-full p-1 border-2 border-white">
+                      <Camera className="w-3 h-3 text-white" />
+                    </div>
+                    <input type="file" accept="image/*" onChange={handleFileChange} className="hidden" />
+                  </label>
+                ) : (
+                  <div className="w-24 h-24 rounded-full bg-white flex items-center justify-center border-4 border-white shadow-lg overflow-hidden">
+                    {profilePreview ? (
+                      <img src={profilePreview} alt="Profile" className="w-full h-full object-cover" />
+                    ) : (
+                      <User className="w-10 h-10 text-purple-600" />
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+
             <div className="pt-16 pb-6 px-6">
-              {error && (
-                <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg flex items-center space-x-2">
-                  <AlertCircle className="w-4 h-4 text-red-500" />
-                  <p className="text-sm text-red-600">{error}</p>
-                </div>
-              )}
-
-              {success && (
-                <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg flex items-center space-x-2">
-                  <CheckCircle className="w-4 h-4 text-green-500" />
-                  <p className="text-sm text-green-600">{success}</p>
-                </div>
-              )}
-
               {isEditing ? (
-                <form onSubmit={handleSubmit}>
-                  <div className="space-y-4">
+                <form onSubmit={handleSubmit} className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Full Name
-                      </label>
-                      <div className="relative">
-                        <User className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
-                        <input
-                          type="text"
-                          name="name"
-                          value={formData.name}
-                          onChange={handleChange}
-                          className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-400 focus:border-transparent outline-none"
-                          placeholder="Your name"
-                          required
-                        />
-                      </div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
+                      <input
+                        type="text"
+                        name="name"
+                        value={formData.name}
+                        onChange={handleChange}
+                        className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-400 outline-none"
+                        required
+                      />
                     </div>
-
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Phone Number
-                      </label>
-                      <div className="relative">
-                        <Phone className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
-                        <input
-                          type="tel"
-                          name="phoneNumber"
-                          value={formData.phoneNumber || ''}
-                          onChange={handleChange}
-                          className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-400 focus:border-transparent outline-none"
-                          placeholder="+1 234 567 8900"
-                        />
-                      </div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Email (read-only)</label>
+                      <input
+                        type="email"
+                        value={formData.email}
+                        disabled
+                        className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-gray-500"
+                      />
                     </div>
-
-                    <div className="flex items-center space-x-3 pt-2">
-                      <button
-                        type="button"
-                        onClick={handleCancel}
-                        className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        type="submit"
-                        disabled={isUpdating}
-                        className="flex-1 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition disabled:opacity-50"
-                      >
-                        {isUpdating ? (
-                          <Loader2 className="w-4 h-4 animate-spin mx-auto" />
-                        ) : (
-                          'Save Changes'
-                        )}
-                      </button>
-                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Phone Number</label>
+                    <input
+                      type="tel"
+                      name="phoneNumber"
+                      value={formData.phoneNumber || ''}
+                      onChange={handleChange}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-400 outline-none"
+                      placeholder="Not provided"
+                    />
+                  </div>
+                  <div className="flex space-x-3 pt-2">
+                    <button type="button" onClick={handleCancel} className="px-4 py-2 border border-gray-200 text-gray-700 rounded-lg">Cancel</button>
+                    <button type="submit" disabled={isUpdating} className="px-4 py-2 bg-purple-600 text-white rounded-lg disabled:opacity-50">
+                      {isUpdating ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Save Changes'}
+                    </button>
                   </div>
                 </form>
               ) : isChangingPass ? (
-                <form onSubmit={handlePasswordSubmit}>
-                  <div className="space-y-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Current Password
-                      </label>
-                      <div className="relative">
-                        <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
-                        <input
-                          type="password"
-                          name="currentPassword"
-                          value={passwordData.currentPassword}
-                          onChange={handlePasswordChange}
-                          className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-400 focus:border-transparent outline-none"
-                          placeholder="Enter current password"
-                          required
-                        />
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        New Password
-                      </label>
-                      <div className="relative">
-                        <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
-                        <input
-                          type="password"
-                          name="newPassword"
-                          value={passwordData.newPassword}
-                          onChange={handlePasswordChange}
-                          className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-400 focus:border-transparent outline-none"
-                          placeholder="Enter new password"
-                          required
-                        />
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Confirm New Password
-                      </label>
-                      <div className="relative">
-                        <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
-                        <input
-                          type="password"
-                          name="confirmPassword"
-                          value={passwordData.confirmPassword}
-                          onChange={handlePasswordChange}
-                          className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-400 focus:border-transparent outline-none"
-                          placeholder="Confirm new password"
-                          required
-                        />
-                      </div>
-                    </div>
-
-                    <div className="flex items-center space-x-3 pt-2">
-                      <button
-                        type="button"
-                        onClick={handleCancelPassword}
-                        className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        type="submit"
-                        disabled={isChangingPassword}
-                        className="flex-1 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition disabled:opacity-50"
-                      >
-                        {isChangingPassword ? (
-                          <Loader2 className="w-4 h-4 animate-spin mx-auto" />
-                        ) : (
-                          'Change Password'
-                        )}
+                <form onSubmit={handlePasswordSubmit} className="space-y-4 max-w-md">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Current Password</label>
+                    <div className="relative">
+                      <input
+                        type={showPassword ? 'text' : 'password'}
+                        name="currentPassword"
+                        value={passwordData.currentPassword}
+                        onChange={handlePasswordChange}
+                        className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-400 outline-none pr-9"
+                        required
+                      />
+                      <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2">
+                        {showPassword ? <EyeOff className="w-4 h-4 text-gray-400" /> : <Eye className="w-4 h-4 text-gray-400" />}
                       </button>
                     </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">New Password</label>
+                    <div className="relative">
+                      <input
+                        type={showNewPassword ? 'text' : 'password'}
+                        name="newPassword"
+                        value={passwordData.newPassword}
+                        onChange={handlePasswordChange}
+                        className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-400 outline-none pr-9"
+                        required
+                      />
+                      <button type="button" onClick={() => setShowNewPassword(!showNewPassword)} className="absolute right-3 top-1/2 -translate-y-1/2">
+                        {showNewPassword ? <EyeOff className="w-4 h-4 text-gray-400" /> : <Eye className="w-4 h-4 text-gray-400" />}
+                      </button>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Confirm Password</label>
+                    <div className="relative">
+                      <input
+                        type={showConfirmPassword ? 'text' : 'password'}
+                        name="confirmPassword"
+                        value={passwordData.confirmPassword}
+                        onChange={handlePasswordChange}
+                        className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-400 outline-none pr-9"
+                        required
+                      />
+                      <button type="button" onClick={() => setShowConfirmPassword(!showConfirmPassword)} className="absolute right-3 top-1/2 -translate-y-1/2">
+                        {showConfirmPassword ? <EyeOff className="w-4 h-4 text-gray-400" /> : <Eye className="w-4 h-4 text-gray-400" />}
+                      </button>
+                    </div>
+                  </div>
+                  <div className="flex space-x-3 pt-2">
+                    <button type="button" onClick={handleCancelPassword} className="px-4 py-2 border border-gray-200 text-gray-700 rounded-lg">Cancel</button>
+                    <button type="submit" disabled={isChangingPassword} className="px-4 py-2 bg-purple-600 text-white rounded-lg disabled:opacity-50">
+                      {isChangingPassword ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Change Password'}
+                    </button>
                   </div>
                 </form>
               ) : (
-                <>
-                  {/* User Info Display */}
+                <div className="grid grid-cols-2 gap-6">
                   <div className="space-y-4">
                     <div className="flex items-center justify-between pb-2 border-b border-gray-100">
-                      <span className="text-sm font-medium text-gray-500">Name</span>
-                      <div className="flex items-center space-x-2">
-                        <User className="w-4 h-4 text-gray-400" />
-                        <span className="text-gray-700 font-medium">
-                          {user?.name || 'Not provided'}
-                        </span>
-                      </div>
+                      <span className="text-sm text-gray-500">Name</span>
+                      <span className="text-sm font-medium text-gray-800">{user?.name || 'Not provided'}</span>
                     </div>
-
                     <div className="flex items-center justify-between pb-2 border-b border-gray-100">
-                      <span className="text-sm font-medium text-gray-500">Email</span>
-                      <div className="flex items-center space-x-2">
-                        <Mail className="w-4 h-4 text-gray-400" />
-                        <span className="text-gray-700">
-                          {user?.email || 'Not provided'}
-                        </span>
-                      </div>
+                      <span className="text-sm text-gray-500">Email</span>
+                      <span className="text-sm font-medium text-gray-800">{user?.email || 'Not provided'}</span>
                     </div>
-
                     <div className="flex items-center justify-between pb-2 border-b border-gray-100">
-                      <span className="text-sm font-medium text-gray-500">Phone</span>
-                      <div className="flex items-center space-x-2">
-                        <Phone className="w-4 h-4 text-gray-400" />
-                        <span className="text-gray-700">
-                          {user?.phoneNumber || 'Not provided'}
-                        </span>
-                      </div>
+                      <span className="text-sm text-gray-500">Phone</span>
+                      <span className="text-sm font-medium text-gray-800">{user?.phoneNumber || 'Not provided'}</span>
                     </div>
-
+                  </div>
+                  <div className="space-y-4">
                     <div className="flex items-center justify-between pb-2 border-b border-gray-100">
-                      <span className="text-sm font-medium text-gray-500">Member Since</span>
-                      <div className="flex items-center space-x-2">
-                        <Calendar className="w-4 h-4 text-gray-400" />
-                        <span className="text-gray-700">
-                          {user?.createdAt ? format(new Date(user.createdAt), 'MMMM d, yyyy') : 'Not available'}
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center justify-between pb-2 border-b border-gray-100">
-                      <span className="text-sm font-medium text-gray-500">Email Verified</span>
-                      <span className="flex items-center">
-                        {user?.isEmailVerified ? (
-                          <CheckCircle className="w-4 h-4 text-green-500" />
-                        ) : (
-                          <AlertCircle className="w-4 h-4 text-yellow-500" />
-                        )}
+                      <span className="text-sm text-gray-500">Member Since</span>
+                      <span className="text-sm font-medium text-gray-800">
+                        {user?.createdAt ? format(new Date(user.createdAt), 'MMMM d, yyyy') : 'Not available'}
                       </span>
                     </div>
-
                     <div className="flex items-center justify-between pb-2 border-b border-gray-100">
-                      <span className="text-sm font-medium text-gray-500">2-Step Verification</span>
-                      <button
-                        onClick={() => setShow2FAModal(true)}
-                        className="flex items-center space-x-1 text-purple-600 hover:text-purple-700"
-                      >
-                        <Shield className="w-4 h-4" />
-                        <span className="text-sm font-medium">
-                          {user?.isTwoFactorEnabled ? 'Enabled' : 'Disabled'}
-                        </span>
+                      <span className="text-sm text-gray-500">Email Verified</span>
+                      {user?.isEmailVerified ? (
+                        <span className="text-sm font-medium text-green-600 flex items-center gap-1">Yes <CheckCircle className="w-4 h-4" /></span>
+                      ) : (
+                        <span className="text-sm font-medium text-yellow-600 flex items-center gap-1">Pending <AlertCircle className="w-4 h-4" /></span>
+                      )}
+                    </div>
+                    <div className="flex items-center justify-between pb-2 border-b border-gray-100">
+                      <span className="text-sm text-gray-500">2-Step Verification</span>
+                      <button onClick={() => setShow2FAModal(true)} className="text-sm font-medium text-purple-600 hover:text-purple-700">
+                        {user?.isTwoFactorEnabled ? 'Enabled' : 'Disabled'}
                       </button>
                     </div>
                   </div>
+                </div>
+              )}
 
-                  {/* Action Buttons */}
-                  <div className="mt-6 space-y-3">
-                    <button
-                      onClick={() => setIsChangingPass(true)}
-                      className="w-full flex items-center justify-center space-x-2 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition"
-                    >
-                      <Lock className="w-4 h-4" />
-                      <span>Change Password</span>
-                    </button>
-                  </div>
-                </>
+              {!isEditing && !isChangingPass && (
+                <div className="mt-6 pt-4 border-t border-gray-100 flex space-x-3">
+                  <button onClick={() => setIsChangingPass(true)} className="flex items-center space-x-2 px-4 py-2 border border-gray-200 text-gray-700 text-sm rounded-lg">
+                    <Lock className="w-4 h-4" />
+                    <span>Change Password</span>
+                  </button>
+                  <button onClick={handleLogout} className="flex items-center space-x-2 px-4 py-2 bg-red-50 text-red-600 text-sm rounded-lg">
+                    <LogOut className="w-4 h-4" />
+                    <span>Logout</span>
+                  </button>
+                </div>
               )}
             </div>
           </div>
         </div>
       </div>
+    </div>
+  );
+
+  return (
+    <>
+      <MobileView />
+      <DesktopView />
 
       {/* 2FA Modal */}
       {show2FAModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
-            <div className="p-6">
+          <div className="bg-white rounded-xl shadow-xl max-w-md w-full">
+            <div className="p-5">
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center space-x-2">
-                  <Shield className="w-5 h-5 text-purple-600" />
-                  <h2 className="text-xl font-semibold text-gray-800">Two-Factor Authentication</h2>
+                  <div className="p-1.5 bg-purple-50 rounded-lg">
+                    <Shield className="w-4 h-4 text-purple-600" />
+                  </div>
+                  <h2 className="text-lg font-semibold text-gray-800">Two-Factor Authentication</h2>
                 </div>
-                <button
-                  onClick={() => setShow2FAModal(false)}
-                  className="text-gray-400 hover:text-gray-600"
-                >
+                <button onClick={() => setShow2FAModal(false)} className="text-gray-400 hover:text-gray-600">
                   <X className="w-5 h-5" />
                 </button>
               </div>
 
               <div className="space-y-4">
-                <p className="text-gray-600">
-                  Add an extra layer of security to your account by requiring a verification code on each login.
-                </p>
-                
+                <p className="text-sm text-gray-600">Add an extra layer of security to your account by requiring a verification code on each login.</p>
                 <div className="p-3 bg-yellow-50 rounded-lg">
-                  <p className="text-sm text-yellow-700">
-                    <strong>Note:</strong> When enabled, you will receive a 6-digit code via email each time you log in.
-                  </p>
+                  <p className="text-xs text-yellow-700">When enabled, you will receive a 6-digit code via email each time you log in.</p>
                 </div>
-
                 <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                   <span className="text-gray-700">Current Status</span>
                   <span className={`text-sm font-medium ${user?.isTwoFactorEnabled ? 'text-green-600' : 'text-gray-500'}`}>
                     {user?.isTwoFactorEnabled ? 'Enabled' : 'Disabled'}
                   </span>
                 </div>
-
                 <div className="flex items-center space-x-3 pt-2">
-                  <button
-                    onClick={() => setShow2FAModal(false)}
-                    className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition"
-                  >
-                    Close
-                  </button>
-                  <button
-                    onClick={handleToggle2FA}
-                    disabled={isToggling2FA}
-                    className="flex-1 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition disabled:opacity-50"
-                  >
-                    {isToggling2FA ? (
-                      <Loader2 className="w-4 h-4 animate-spin mx-auto" />
-                    ) : (
-                      user?.isTwoFactorEnabled ? 'Disable 2FA' : 'Enable 2FA'
-                    )}
+                  <button onClick={() => setShow2FAModal(false)} className="flex-1 px-4 py-2 border border-gray-200 text-gray-700 rounded-lg">Close</button>
+                  <button onClick={handleToggle2FA} disabled={isToggling2FA} className="flex-1 px-4 py-2 bg-purple-600 text-white rounded-lg disabled:opacity-50">
+                    {isToggling2FA ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : (user?.isTwoFactorEnabled ? 'Disable 2FA' : 'Enable 2FA')}
                   </button>
                 </div>
               </div>
@@ -620,7 +759,7 @@ const Profile = () => {
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 };
 

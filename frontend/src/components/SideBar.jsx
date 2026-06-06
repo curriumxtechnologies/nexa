@@ -16,7 +16,9 @@ import {
   BarChart3,
   User,
   Shield,
-  Globe
+  Globe,
+  AtSign,
+  LayoutGrid
 } from 'lucide-react';
 import { useDispatch } from 'react-redux';
 import { logout } from '../slices/authSlice';
@@ -46,7 +48,8 @@ const SideBar = ({ isCollapsed = false, onToggle }) => {
     { id: 'trash', label: 'Trash', icon: Trash2, path: '/trash', badge: null },
   ];
 
-  const teamNavItems = [
+  const emailManagementNavItems = [
+    { id: 'custom-emails', label: 'Custom Emails', icon: AtSign, path: '/custom-emails' },
     { id: 'domains', label: 'Domains', icon: Globe, path: '/domains' },
     { id: 'team', label: 'Team Access', icon: Users, path: '/team' },
   ];
@@ -146,8 +149,20 @@ const SideBar = ({ isCollapsed = false, onToggle }) => {
           <div className="my-2 border-t border-gray-200" />
         )}
 
-        {/* Team Section */}
-        {teamNavItems.map((item) => {
+        {/* Section Header */}
+        {!collapsed && (
+          <div className="px-3 py-1">
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Email Management</p>
+          </div>
+        )}
+        {collapsed && (
+          <div className="flex justify-center my-2">
+            <div className="w-8 h-px bg-gray-200"></div>
+          </div>
+        )}
+
+        {/* Email Management Section */}
+        {emailManagementNavItems.map((item) => {
           const Icon = item.icon;
           const active = isActive(item.path);
           
@@ -199,6 +214,9 @@ const SideBar = ({ isCollapsed = false, onToggle }) => {
             </button>
           );
         })}
+        
+        {/* Divider before logout */}
+        <div className="my-2 border-t border-gray-200" />
         
         {/* Logout Button */}
         <button

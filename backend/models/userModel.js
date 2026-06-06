@@ -121,6 +121,15 @@ const userSchema = new mongoose.Schema({
     isActive: {
       type: Boolean,
       default: true
+    },
+    // Webhook configuration for this domain
+    webhookSecret: {
+      type: String,
+      default: null
+    },
+    webhookConfiguredAt: {
+      type: Date,
+      default: null
     }
   }],
   // User settings
@@ -258,6 +267,7 @@ const userSchema = new mongoose.Schema({
 // Create indexes for faster queries
 userSchema.index({ email: 1 });
 userSchema.index({ 'resendConfigs.domain': 1 });
+userSchema.index({ 'resendConfigs.id': 1 });
 userSchema.index({ 'pushTokens.token': 1 });
 userSchema.index({ 'pushTokens.deviceId': 1 });
 

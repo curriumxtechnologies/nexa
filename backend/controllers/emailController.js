@@ -13,10 +13,8 @@ const generateToken = () => {
 
 // Helper function to get accessible custom emails for a user
 const getAccessibleCustomEmails = async (userId) => {
-  // Get user's own emails
   const ownEmails = await CustomEmail.find({ userId, isActive: true });
 
-  // Get emails from team access
   const teamAccess = await TeamAccess.find({
     userId,
     status: 'active',
@@ -32,7 +30,6 @@ const getAccessibleCustomEmails = async (userId) => {
       });
       accessibleEmails.push(...emails);
     } else {
-      // Access to all emails under this domain
       const emails = await CustomEmail.find({
         resendConfigId: access.resendConfigId,
         isActive: true
@@ -41,25 +38,22 @@ const getAccessibleCustomEmails = async (userId) => {
     }
   }
 
-  // Combine and deduplicate
   const allEmails = [...ownEmails, ...accessibleEmails];
   return allEmails.filter((email, index, self) => 
     index === self.findIndex(e => e._id.toString() === email._id.toString())
   );
 };
 
-// Send email notification (email)
+// Send email notification
 const sendEmailNotification = async (to, subject, html) => {
   try {
     const resend = new Resend(process.env.RESEND_API_KEY);
-    
     await resend.emails.send({
       from: process.env.EMAIL_FROM,
       to: to,
       subject: subject,
       html: html
     });
-    
     return true;
   } catch (error) {
     console.error('Send email notification error:', error);
@@ -67,23 +61,15 @@ const sendEmailNotification = async (to, subject, html) => {
   }
 };
 
-// Send push notification (placeholder - will be implemented with web-push)
+// Send push notification
 const sendPushNotification = async (userId, title, body, data = {}) => {
   try {
     const user = await User.findById(userId);
     if (!user) return false;
-
-    // Check if push notifications are enabled
     if (!user.notificationPreferences?.push?.enabled) return false;
-
     const pushTokens = user.pushTokens?.filter(t => t.isActive) || [];
-    
     if (pushTokens.length === 0) return false;
-
-    // TODO: Implement actual push notification sending with web-push library
-    // For now, just log
     console.log(`Would send push notification to ${pushTokens.length} devices:`, { title, body, data });
-    
     return true;
   } catch (error) {
     console.error('Send push notification error:', error);
@@ -97,7 +83,6 @@ const notifyNewEmail = async (userId, emailData) => {
     const user = await User.findById(userId);
     if (!user) return;
 
-    // Send email notification if enabled
     if (user.notificationPreferences?.email?.newEmail) {
       await sendEmailNotification(
         user.email,
@@ -118,7 +103,6 @@ const notifyNewEmail = async (userId, emailData) => {
       );
     }
 
-    // Send push notification if enabled
     if (user.notificationPreferences?.push?.newEmail) {
       await sendPushNotification(
         userId,
@@ -127,7 +111,6 @@ const notifyNewEmail = async (userId, emailData) => {
         { type: 'new_email', emailId: emailData.id }
       );
     }
-
   } catch (error) {
     console.error('Notify new email error:', error);
   }
@@ -139,7 +122,6 @@ const notifyLoginAlert = async (userId, ip, device) => {
     const user = await User.findById(userId);
     if (!user) return;
 
-    // Send email notification if enabled
     if (user.notificationPreferences?.email?.loginAlerts) {
       await sendEmailNotification(
         user.email,
@@ -162,7 +144,6 @@ const notifyLoginAlert = async (userId, ip, device) => {
       );
     }
 
-    // Send push notification if enabled
     if (user.notificationPreferences?.push?.loginAlerts) {
       await sendPushNotification(
         userId,
@@ -171,7 +152,6 @@ const notifyLoginAlert = async (userId, ip, device) => {
         { type: 'login_alert', ip, device }
       );
     }
-
   } catch (error) {
     console.error('Notify login alert error:', error);
   }
@@ -202,7 +182,6 @@ const notifyDomainVerified = async (userId, domain) => {
         `
       );
     }
-
   } catch (error) {
     console.error('Notify domain verified error:', error);
   }
@@ -242,11 +221,288 @@ const notifyTeamInvite = async (userId, invitedBy, domain, accessLevel) => {
         { type: 'team_invite', domain, accessLevel }
       );
     }
-
   } catch (error) {
     console.error('Notify team invite error:', error);
   }
 };
+
+// ==================== WEBHOOK SECRET MANAGEMENT ====================
+
+// Add webhook secret for a domain
+const addWebhookSecret = async (req, res) => {
+  try {
+    const userId = req.userId;
+    const { resendConfigId, webhookSecret } = req.body;
+
+    if (!resendConfigId || !webhookSecret) {
+      return res.status(400).json({
+        success: false,
+        message: 'Resend config ID and webhook secret are required'
+      });
+    }
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Find the resend config
+    const configIndex = user.resendConfigs.findIndex(
+      c => (c.id === resendConfigId || c._id?.toString() === resendConfigId?.toString())
+    );
+
+    if (configIndex === -1) {
+      return res.status(404).json({
+        success: false,
+        message: 'Resend configuration not found'
+      });
+    }
+
+    // Add webhook secret to the config
+    user.resendConfigs[configIndex].webhookSecret = webhookSecret;
+    user.resendConfigs[configIndex].webhookConfiguredAt = new Date();
+
+    await user.save();
+
+    const webhookUrl = `${process.env.API_URL || process.env.BACKEND_URL}/api/email/webhook/receive`;
+
+    res.status(200).json({
+      success: true,
+      message: 'Webhook secret saved successfully',
+      data: {
+        domain: user.resendConfigs[configIndex].domain,
+        webhookUrl: webhookUrl,
+        webhookConfiguredAt: user.resendConfigs[configIndex].webhookConfiguredAt
+      }
+    });
+
+  } catch (error) {
+    console.error('Add webhook secret error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error adding webhook secret',
+      error: error.message
+    });
+  }
+};
+
+// Get webhook configuration for a domain
+const getWebhookConfig = async (req, res) => {
+  try {
+    const userId = req.userId;
+    const { resendConfigId } = req.params;
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    const resendConfig = user.resendConfigs.find(
+      c => (c.id === resendConfigId || c._id?.toString() === resendConfigId?.toString())
+    );
+
+    if (!resendConfig) {
+      return res.status(404).json({
+        success: false,
+        message: 'Resend configuration not found'
+      });
+    }
+
+    const webhookUrl = `${process.env.API_URL || process.env.BACKEND_URL}/api/email/webhook/receive`;
+
+    res.status(200).json({
+      success: true,
+      data: {
+        domain: resendConfig.domain,
+        webhookUrl: webhookUrl,
+        webhookSecret: resendConfig.webhookSecret ? '********' : null,
+        hasWebhookSecret: !!resendConfig.webhookSecret,
+        webhookConfiguredAt: resendConfig.webhookConfiguredAt || null
+      }
+    });
+
+  } catch (error) {
+    console.error('Get webhook config error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching webhook configuration',
+      error: error.message
+    });
+  }
+};
+
+// ==================== RECEIVE EMAIL (WEBHOOK) ====================
+
+// Receive email (webhook from Resend) - supports per-user webhook secrets
+const receiveEmail = async (req, res) => {
+  try {
+    const payload = req.body;
+    const emailPayload = payload.data || payload;
+    const { to, from, subject, html, text, attachments } = emailPayload;
+
+    const toEmail = Array.isArray(to) ? to[0] : to;
+
+    if (!toEmail) {
+      return res.status(400).json({
+        success: false,
+        message: 'No recipient email found in webhook payload'
+      });
+    }
+
+    // Find which custom email this belongs to
+    const customEmail = await CustomEmail.findOne({
+      email: toEmail.toLowerCase(),
+      isActive: true
+    });
+
+    if (!customEmail) {
+      return res.status(404).json({
+        success: false,
+        message: 'No custom email found for this address'
+      });
+    }
+
+    const user = await User.findById(customEmail.userId);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Find the Resend config to get the webhook secret
+    const resendConfig = user.resendConfigs.find(
+      c => (c.id === customEmail.resendConfigId ||
+        c._id?.toString() === customEmail.resendConfigId?.toString())
+        && c.isActive
+    );
+
+    if (!resendConfig) {
+      return res.status(404).json({
+        success: false,
+        message: 'Resend configuration not found for this email'
+      });
+    }
+
+    // Verify webhook signature if user has configured a webhook secret
+    if (resendConfig.webhookSecret) {
+      const wh = new Webhook(resendConfig.webhookSecret);
+      try {
+        wh.verify(JSON.stringify(req.body), {
+          'svix-id': req.headers['svix-id'],
+          'svix-timestamp': req.headers['svix-timestamp'],
+          'svix-signature': req.headers['svix-signature'],
+        });
+      } catch (err) {
+        console.error('Webhook signature verification failed for domain:', resendConfig.domain);
+        return res.status(401).json({
+          success: false,
+          message: 'Invalid webhook signature'
+        });
+      }
+    } else {
+      // No webhook secret configured - still accept but log warning
+      console.warn(`No webhook secret configured for domain: ${resendConfig.domain}. Skipping signature verification.`);
+    }
+
+    // Process attachments
+    const processedAttachments = [];
+    if (attachments && attachments.length > 0) {
+      for (const attachment of attachments) {
+        if (attachment.url) {
+          processedAttachments.push({
+            filename: attachment.filename || attachment.name,
+            originalName: attachment.filename || attachment.name,
+            url: attachment.url,
+            publicId: null,
+            fileSize: attachment.size || 0,
+            mimeType: attachment.mimetype || attachment.type || 'application/octet-stream',
+            cid: attachment.cid || null
+          });
+        }
+      }
+    }
+
+    // Save received email to DB
+    const emailId = uuidv4();
+    const receivedEmail = new Email({
+      userId: user._id,
+      customEmailId: customEmail._id,
+      direction: 'received',
+      emailId,
+      from: {
+        email: typeof from === 'object' ? from.email : from,
+        name: typeof from === 'object' ? from.name : null
+      },
+      to: [{ email: toEmail, name: null }],
+      subject: subject || '(No Subject)',
+      content: html || text || '',
+      contentType: html ? 'html' : 'text',
+      attachments: processedAttachments,
+      status: 'received',
+      receivedAt: new Date(),
+      webhookData: req.body
+    });
+
+    await receivedEmail.save();
+
+    // Notify user about new email
+    const preview = (html || text || '')
+      .replace(/<[^>]*>/g, '')
+      .substring(0, 100);
+
+    await notifyNewEmail(user._id, {
+      from: typeof from === 'object' ? from.email : from,
+      subject: subject || '(No Subject)',
+      preview,
+      id: emailId
+    });
+
+    // Forward to user's forward email if set
+    if (customEmail.forwardToEmail && resendConfig.isVerified) {
+      const resend = new Resend(resendConfig.apiKey);
+      try {
+        await resend.emails.send({
+          from: toEmail,
+          to: customEmail.forwardToEmail,
+          subject: `Fwd: ${subject || '(No Subject)'}`,
+          html: `
+            <div style="font-family: Arial, sans-serif;">
+              <p><strong>From:</strong> ${typeof from === 'object' ? from.email : from}</p>
+              <p><strong>To:</strong> ${toEmail}</p>
+              <p><strong>Subject:</strong> ${subject || '(No Subject)'}</p>
+              <hr />
+              ${html || `<p>${text}</p>` || ''}
+            </div>
+          `
+        });
+      } catch (forwardError) {
+        console.error('Email forwarding failed:', forwardError.message);
+      }
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'Email received and stored'
+    });
+
+  } catch (error) {
+    console.error('Receive email error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error processing received email',
+      error: error.message
+    });
+  }
+};
+
+// ==================== EXISTING FUNCTIONS ====================
 
 // Add Resend API Key and Domain
 const addResendConfig = async (req, res) => {
@@ -277,7 +533,6 @@ const addResendConfig = async (req, res) => {
       });
     }
 
-    // Check if domain already exists in user's account
     const existingDomain = user.resendConfigs.find(c => c.domain === domain && c.isActive);
     if (existingDomain) {
       return res.status(400).json({
@@ -286,13 +541,11 @@ const addResendConfig = async (req, res) => {
       });
     }
 
-    // Validate API key and check domain is verified in Resend
     const resend = new Resend(resendApiKey);
 
     let domainsList = [];
     try {
       const response = await resend.domains.list();
-
       if (Array.isArray(response)) {
         domainsList = response;
       } else if (Array.isArray(response?.data)) {
@@ -328,7 +581,6 @@ const addResendConfig = async (req, res) => {
       });
     }
 
-    // Domain is verified in Resend — save it directly as verified
     const configId = uuidv4();
 
     user.resendConfigs.push({
@@ -338,15 +590,23 @@ const addResendConfig = async (req, res) => {
       isVerified: true,
       verifiedAt: new Date(),
       createdAt: new Date(),
-      isActive: true
+      isActive: true,
+      webhookSecret: null,
+      webhookConfiguredAt: null
     });
 
     await user.save();
 
+    const webhookUrl = `${process.env.API_URL || process.env.BACKEND_URL}/api/email/webhook/receive`;
+
     res.status(200).json({
       success: true,
       message: `Domain "${domain}" added and verified successfully!`,
-      data: { domain, configId }
+      data: {
+        domain,
+        configId,
+        webhookUrl
+      }
     });
 
   } catch (error) {
@@ -363,7 +623,6 @@ const addResendConfig = async (req, res) => {
 const getResendConfigs = async (req, res) => {
   try {
     const userId = req.userId;
-
     const user = await User.findById(userId);
     if (!user) {
       return res.status(404).json({
@@ -372,12 +631,17 @@ const getResendConfigs = async (req, res) => {
       });
     }
 
+    const webhookUrl = `${process.env.API_URL || process.env.BACKEND_URL}/api/email/webhook/receive`;
+
     const configs = user.resendConfigs.filter(c => c.isActive).map(c => ({
       id: c.id,
       domain: c.domain,
       isVerified: c.isVerified,
       verifiedAt: c.verifiedAt,
-      createdAt: c.createdAt
+      createdAt: c.createdAt,
+      webhookUrl: webhookUrl,
+      hasWebhookSecret: !!c.webhookSecret,
+      webhookConfiguredAt: c.webhookConfiguredAt || null
     }));
 
     res.status(200).json({
@@ -390,59 +654,6 @@ const getResendConfigs = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Error fetching resend configs',
-      error: error.message
-    });
-  }
-};
-
-// Verify domain ownership
-const verifyDomainOwnership = async (req, res) => {
-  try {
-    const { token } = req.params;
-
-    const user = await User.findOne({
-      'resendConfigs.verificationToken': token,
-      'resendConfigs.tokenExpiry': { $gt: new Date() }
-    });
-
-    if (!user) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid or expired verification token.'
-      });
-    }
-
-    const configIndex = user.resendConfigs.findIndex(c => c.verificationToken === token);
-    if (configIndex === -1) {
-      return res.status(400).json({
-        success: false,
-        message: 'Configuration not found'
-      });
-    }
-
-    const domain = user.resendConfigs[configIndex].domain;
-    
-    user.resendConfigs[configIndex].isVerified = true;
-    user.resendConfigs[configIndex].verificationToken = null;
-    user.resendConfigs[configIndex].tokenExpiry = null;
-    user.resendConfigs[configIndex].verifiedAt = new Date();
-    
-    await user.save();
-
-    // Send notification about domain verification
-    await notifyDomainVerified(user._id, domain);
-
-    res.status(200).json({
-      success: true,
-      message: 'Domain verified successfully!',
-      data: { domain }
-    });
-
-  } catch (error) {
-    console.error('Domain verification error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Error verifying domain',
       error: error.message
     });
   }
@@ -469,7 +680,6 @@ const createCustomEmail = async (req, res) => {
       });
     }
 
-    // Find resend config — check user's own configs first
     let resendConfig = null;
     let isOwner = true;
     let ownerId = userId;
@@ -481,7 +691,6 @@ const createCustomEmail = async (req, res) => {
     );
 
     if (!resendConfig) {
-      // Check team access
       const teamAccess = await TeamAccess.findOne({
         userId,
         resendConfigId,
@@ -492,8 +701,7 @@ const createCustomEmail = async (req, res) => {
       if (teamAccess) {
         const owner = await User.findById(teamAccess.ownerId);
         resendConfig = owner.resendConfigs.find(
-          c => c.id === resendConfigId ||
-          c._id?.toString() === resendConfigId?.toString()
+          c => c.id === resendConfigId || c._id?.toString() === resendConfigId?.toString()
         );
         isOwner = false;
         ownerId = teamAccess.ownerId;
@@ -510,7 +718,6 @@ const createCustomEmail = async (req, res) => {
     const { domain, id: configId } = resendConfig;
     const emailAddress = `${username}@${domain}`;
 
-    // Check if email already exists
     const existingEmail = await CustomEmail.findOne({ email: emailAddress });
     if (existingEmail) {
       return res.status(400).json({
@@ -519,7 +726,6 @@ const createCustomEmail = async (req, res) => {
       });
     }
 
-    // Handle profile picture upload
     let profilePicture = {
       url: null,
       publicId: null,
@@ -538,7 +744,6 @@ const createCustomEmail = async (req, res) => {
       };
     }
 
-    // If setting as default, remove default from others
     if (isDefault) {
       await CustomEmail.updateMany(
         { userId: ownerId, isDefault: true },
@@ -563,7 +768,6 @@ const createCustomEmail = async (req, res) => {
 
     await customEmail.save();
 
-    // Send welcome email via Resend
     const resend = new Resend(resendConfig.apiKey);
     try {
       await resend.emails.send({
@@ -575,14 +779,14 @@ const createCustomEmail = async (req, res) => {
             <h2 style="color: #7b3eff;">Welcome to Nexa!</h2>
             <p>Your new email address <strong>${emailAddress}</strong> has been created successfully.</p>
             <p>Emails sent to this address will be forwarded to <strong>${forwardToEmail}</strong>.</p>
-            <p>You can now start sending and receiving emails using this address.</p>
+            <p>To receive webhooks, configure your webhook secret in the Nexa dashboard.</p>
+            <p>Webhook URL: ${process.env.API_URL || process.env.BACKEND_URL}/api/email/webhook/receive</p>
             <hr />
             <p style="color: #666; font-size: 12px;">Nexa - Email Communication Reimagined</p>
           </div>
         `
       });
     } catch (emailError) {
-      // Don't fail the whole request if welcome email fails
       console.error('Welcome email failed:', emailError.message);
     }
 
@@ -630,7 +834,6 @@ const inviteUserToDomain = async (req, res) => {
       });
     }
 
-    // Find the resend config — check both id and _id
     const resendConfig = owner.resendConfigs.find(
       c => (c.id === resendConfigId || c._id?.toString() === resendConfigId?.toString())
       && c.isActive
@@ -643,7 +846,6 @@ const inviteUserToDomain = async (req, res) => {
       });
     }
 
-    // Find the user to invite
     const invitedUser = await User.findOne({ email: email.toLowerCase() });
     if (!invitedUser) {
       return res.status(404).json({
@@ -652,7 +854,6 @@ const inviteUserToDomain = async (req, res) => {
       });
     }
 
-    // Prevent inviting yourself
     if (invitedUser._id.toString() === ownerId.toString()) {
       return res.status(400).json({
         success: false,
@@ -660,7 +861,6 @@ const inviteUserToDomain = async (req, res) => {
       });
     }
 
-    // Check if already invited
     const existingAccess = await TeamAccess.findOne({
       resendConfigId,
       ownerId,
@@ -675,7 +875,6 @@ const inviteUserToDomain = async (req, res) => {
       });
     }
 
-    // Set permissions based on access level
     let permissions = {
       canViewEmails: true,
       canSendEmails: false,
@@ -707,7 +906,7 @@ const inviteUserToDomain = async (req, res) => {
     }
 
     const invitationToken = generateToken();
-    const tokenExpiry = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
+    const tokenExpiry = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
 
     const teamAccess = new TeamAccess({
       resendConfigId,
@@ -725,7 +924,6 @@ const inviteUserToDomain = async (req, res) => {
 
     await teamAccess.save();
 
-    // Send invitation email
     const resend = new Resend(resendConfig.apiKey);
     const acceptLink = `${process.env.FRONTEND_URL}/accept-invitation/${invitationToken}`;
 
@@ -746,14 +944,12 @@ const inviteUserToDomain = async (req, res) => {
               </a>
             </div>
             <p>This invitation expires in 7 days.</p>
-            <p>If you did not expect this invitation, you can safely ignore this email.</p>
             <hr />
             <p style="color: #666; font-size: 12px;">Nexa - Email Communication Reimagined</p>
           </div>
         `
       });
     } catch (emailError) {
-      // Remove team access record if email fails
       await TeamAccess.findByIdAndDelete(teamAccess._id);
       return res.status(500).json({
         success: false,
@@ -762,7 +958,6 @@ const inviteUserToDomain = async (req, res) => {
       });
     }
 
-    // Send in-app notification to invited user
     await notifyTeamInvite(invitedUser._id, owner.name, resendConfig.domain, accessLevel);
 
     res.status(200).json({
@@ -842,7 +1037,6 @@ const getDomainAccessUsers = async (req, res) => {
       });
     }
 
-    // Check if owner owns this config
     const resendConfig = owner.resendConfigs.find(c => c.id === resendConfigId);
     if (!resendConfig) {
       return res.status(403).json({
@@ -901,7 +1095,6 @@ const updateUserAccess = async (req, res) => {
       });
     }
 
-    // Set permissions based on access level
     let permissions = {
       canViewEmails: true,
       canSendEmails: false,
@@ -1051,7 +1244,6 @@ const sendEmail = async (req, res) => {
       });
     }
 
-    // Get the custom email to send from
     const customEmail = await CustomEmail.findOne({ _id: customEmailId, isActive: true });
     if (!customEmail) {
       return res.status(404).json({
@@ -1060,12 +1252,10 @@ const sendEmail = async (req, res) => {
       });
     }
 
-    // Check if user has permission to send from this email
     let resendConfig = null;
     let hasPermission = false;
 
     if (customEmail.userId.toString() === userId.toString()) {
-      // User owns this email
       resendConfig = user.resendConfigs.find(
         c => c.id === customEmail.resendConfigId ||
         c._id?.toString() === customEmail.resendConfigId?.toString()
@@ -1074,7 +1264,6 @@ const sendEmail = async (req, res) => {
         hasPermission = true;
       }
     } else {
-      // Check team access
       const teamAccess = await TeamAccess.findOne({
         userId,
         resendConfigId: customEmail.resendConfigId,
@@ -1101,7 +1290,6 @@ const sendEmail = async (req, res) => {
       });
     }
 
-    // Process attachments
     const attachments = [];
     if (req.files && req.files.length > 0) {
       for (const file of req.files) {
@@ -1155,7 +1343,6 @@ const sendEmail = async (req, res) => {
       });
     }
 
-    // Save sent email to DB
     const sentEmail = new Email({
       userId: customEmail.userId,
       sentBy: userId,
@@ -1205,174 +1392,13 @@ const sendEmail = async (req, res) => {
   }
 };
 
-// Receive email (webhook from Resend)
-const receiveEmail = async (req, res) => {
-  try {
-    // Verify webhook signature
-    const webhookSecret = process.env.RESEND_WEBHOOK_SECRET;
-    if (webhookSecret) {
-      const wh = new Webhook(webhookSecret);
-      try {
-        wh.verify(JSON.stringify(req.body), {
-          'svix-id': req.headers['svix-id'],
-          'svix-timestamp': req.headers['svix-timestamp'],
-          'svix-signature': req.headers['svix-signature'],
-        });
-      } catch (err) {
-        return res.status(401).json({
-          success: false,
-          message: 'Invalid webhook signature'
-        });
-      }
-    }
-
-    const payload = req.body;
-
-    // Resend webhook sends data nested under 'data'
-    const emailPayload = payload.data || payload;
-
-    const { to, from, subject, html, text, attachments } = emailPayload;
-
-    // Get the recipient email address
-    const toEmail = Array.isArray(to) ? to[0] : to;
-
-    if (!toEmail) {
-      return res.status(400).json({
-        success: false,
-        message: 'No recipient email found in webhook payload'
-      });
-    }
-
-    // Find which custom email this belongs to
-    const customEmail = await CustomEmail.findOne({
-      email: toEmail.toLowerCase(),
-      isActive: true
-    });
-
-    if (!customEmail) {
-      return res.status(404).json({
-        success: false,
-        message: 'No custom email found for this address'
-      });
-    }
-
-    const user = await User.findById(customEmail.userId);
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: 'User not found'
-      });
-    }
-
-    // Process attachments
-    const processedAttachments = [];
-    if (attachments && attachments.length > 0) {
-      for (const attachment of attachments) {
-        if (attachment.url) {
-          processedAttachments.push({
-            filename: attachment.filename || attachment.name,
-            originalName: attachment.filename || attachment.name,
-            url: attachment.url,
-            publicId: null,
-            fileSize: attachment.size || 0,
-            mimeType: attachment.mimetype || attachment.type || 'application/octet-stream',
-            cid: attachment.cid || null
-          });
-        }
-      }
-    }
-
-    // Save received email to DB
-    const emailId = uuidv4();
-    const receivedEmail = new Email({
-      userId: user._id,
-      customEmailId: customEmail._id,
-      direction: 'received',
-      emailId,
-      from: {
-        email: typeof from === 'object' ? from.email : from,
-        name: typeof from === 'object' ? from.name : null
-      },
-      to: [{ email: toEmail, name: null }],
-      subject: subject || '(No Subject)',
-      content: html || text || '',
-      contentType: html ? 'html' : 'text',
-      attachments: processedAttachments,
-      status: 'received',
-      receivedAt: new Date(),
-      webhookData: req.body
-    });
-
-    await receivedEmail.save();
-
-    // Notify user about new email
-    const preview = (html || text || '')
-      .replace(/<[^>]*>/g, '')
-      .substring(0, 100);
-
-    await notifyNewEmail(user._id, {
-      from: typeof from === 'object' ? from.email : from,
-      subject: subject || '(No Subject)',
-      preview,
-      id: emailId
-    });
-
-    // Forward to user's forward email if set
-    if (customEmail.forwardToEmail) {
-      const resendConfig = user.resendConfigs.find(
-        c => (c.id === customEmail.resendConfigId ||
-          c._id?.toString() === customEmail.resendConfigId?.toString())
-          && c.isVerified
-          && c.isActive
-      );
-
-      if (resendConfig) {
-        const resend = new Resend(resendConfig.apiKey);
-        try {
-          await resend.emails.send({
-            from: toEmail,
-            to: customEmail.forwardToEmail,
-            subject: `Fwd: ${subject || '(No Subject)'}`,
-            html: `
-              <div style="font-family: Arial, sans-serif;">
-                <p><strong>From:</strong> ${typeof from === 'object' ? from.email : from}</p>
-                <p><strong>To:</strong> ${toEmail}</p>
-                <p><strong>Subject:</strong> ${subject || '(No Subject)'}</p>
-                <hr />
-                ${html || `<p>${text}</p>` || ''}
-              </div>
-            `
-          });
-        } catch (forwardError) {
-          console.error('Email forwarding failed:', forwardError.message);
-        }
-      }
-    }
-
-    res.status(200).json({
-      success: true,
-      message: 'Email received and stored'
-    });
-
-  } catch (error) {
-    console.error('Receive email error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Error processing received email',
-      error: error.message
-    });
-  }
-};
-
-// Get all custom emails for user (including accessible ones)
+// Get all custom emails for user
 const getCustomEmails = async (req, res) => {
   try {
     const userId = req.userId;
     const { resendConfigId } = req.query;
 
-    // Get user's own emails
     let query = { isActive: true };
-    
     if (resendConfigId) {
       query.resendConfigId = resendConfigId;
     }
@@ -1380,7 +1406,6 @@ const getCustomEmails = async (req, res) => {
     const ownEmails = await CustomEmail.find({ ...query, userId })
       .sort({ isDefault: -1, createdAt: -1 });
 
-    // Get emails from team access
     const teamAccess = await TeamAccess.find({
       userId,
       status: 'active'
@@ -1395,7 +1420,6 @@ const getCustomEmails = async (req, res) => {
         });
         accessibleEmails.push(...emails);
       } else if (access.permissions.canViewEmails) {
-        // Access to all emails under this domain
         const emails = await CustomEmail.find({
           resendConfigId: access.resendConfigId,
           isActive: true
@@ -1404,7 +1428,6 @@ const getCustomEmails = async (req, res) => {
       }
     }
 
-    // Combine and deduplicate
     const allEmails = [...ownEmails, ...accessibleEmails];
     const uniqueEmails = allEmails.filter((email, index, self) => 
       index === self.findIndex(e => e._id.toString() === email._id.toString())
@@ -1437,24 +1460,39 @@ const getCustomEmails = async (req, res) => {
 };
 
 // Get all emails (inbox)
+// Get all emails (inbox) - FIXED to exclude trashed emails
 const getInbox = async (req, res) => {
   try {
     const userId = req.userId;
     const { page = 1, limit = 20, folder = 'inbox' } = req.query;
 
-    // Get all custom emails user has access to
     const customEmails = await getAccessibleCustomEmails(userId);
     const customEmailIds = customEmails.map(e => e._id);
 
     let query = { 
       customEmailId: { $in: customEmailIds },
-      direction: 'received', 
+      direction: 'received',
+      // IMPORTANT: Exclude trashed emails from inbox
       isTrashed: false 
     };
     
-    if (folder === 'starred') query.isStarred = true;
-    else if (folder === 'archived') query.isArchived = true;
-    else if (folder === 'inbox') query.isArchived = false;
+    if (folder === 'starred') {
+      query.isStarred = true;
+      query.isTrashed = false; // Starred shouldn't show trashed emails
+    } else if (folder === 'archived') {
+      query.isArchived = true;
+      query.isTrashed = false; // Archived shouldn't show trashed emails
+    } else if (folder === 'inbox') {
+      query.isArchived = false;
+      query.isTrashed = false; // Inbox shouldn't show trashed emails
+    } else if (folder === 'trash') {
+      // For trash folder, ONLY show trashed emails
+      query = { 
+        customEmailId: { $in: customEmailIds },
+        direction: 'received',
+        isTrashed: true  // Only show trashed emails
+      };
+    }
 
     const total = await Email.countDocuments(query);
     const emails = await Email.find(query)
@@ -1531,6 +1569,7 @@ const getSentEmails = async (req, res) => {
 };
 
 // Get single email by ID
+// Get single email by ID
 const getEmailById = async (req, res) => {
   try {
     const userId = req.userId;
@@ -1546,7 +1585,6 @@ const getEmailById = async (req, res) => {
       });
     }
 
-    // Check if user has access to this email
     const accessibleEmails = await getAccessibleCustomEmails(userId);
     const hasAccess = accessibleEmails.some(e => e._id.toString() === email.customEmailId._id.toString());
 
@@ -1558,7 +1596,8 @@ const getEmailById = async (req, res) => {
     }
 
     // Mark as read if it's a received email and not read yet
-    if (email.direction === 'received' && email.status === 'received') {
+    if (email.direction === 'received' && !email.isRead) {
+      email.isRead = true;
       email.status = 'read';
       email.readAt = new Date();
       await email.save();
@@ -1579,6 +1618,7 @@ const getEmailById = async (req, res) => {
   }
 };
 
+// Mark email as read
 // Mark email as read
 const markAsRead = async (req, res) => {
   try {
@@ -1603,6 +1643,7 @@ const markAsRead = async (req, res) => {
       });
     }
 
+    email.isRead = true;
     email.status = 'read';
     email.readAt = new Date();
     await email.save();
@@ -1709,6 +1750,7 @@ const toggleArchive = async (req, res) => {
 };
 
 // Delete email (move to trash)
+// Delete email (move to trash) - NOT permanently delete
 const deleteEmail = async (req, res) => {
   try {
     const userId = req.userId;
@@ -1732,7 +1774,9 @@ const deleteEmail = async (req, res) => {
       });
     }
 
+    // Move to trash instead of deleting
     email.isTrashed = true;
+    email.trashedAt = new Date(); // Optional: track when it was trashed
     await email.save();
 
     res.status(200).json({
@@ -1744,7 +1788,109 @@ const deleteEmail = async (req, res) => {
     console.error('Delete email error:', error);
     res.status(500).json({
       success: false,
-      message: 'Error deleting email',
+      message: 'Error moving email to trash',
+      error: error.message
+    });
+  }
+};
+
+// Restore email from trash back to inbox
+const restoreEmail = async (req, res) => {
+  try {
+    const userId = req.userId;
+    const { emailId } = req.params;
+
+    const email = await Email.findOne({ emailId });
+    if (!email) {
+      return res.status(404).json({
+        success: false,
+        message: 'Email not found'
+      });
+    }
+
+    const accessibleEmails = await getAccessibleCustomEmails(userId);
+    const hasAccess = accessibleEmails.some(e => e._id.toString() === email.customEmailId.toString());
+
+    if (!hasAccess) {
+      return res.status(403).json({
+        success: false,
+        message: 'You do not have access to this email'
+      });
+    }
+
+    // Only allow restore if email is in trash
+    if (!email.isTrashed) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email is not in trash'
+      });
+    }
+
+    // Restore from trash
+    email.isTrashed = false;
+    email.restoredAt = new Date();
+    await email.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'Email restored from trash successfully'
+    });
+
+  } catch (error) {
+    console.error('Restore email error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error restoring email',
+      error: error.message
+    });
+  }
+};
+
+// Permanently delete email from trash
+const permanentlyDeleteEmail = async (req, res) => {
+  try {
+    const userId = req.userId;
+    const { emailId } = req.params;
+
+    const email = await Email.findOne({ emailId });
+    if (!email) {
+      return res.status(404).json({
+        success: false,
+        message: 'Email not found'
+      });
+    }
+
+    const accessibleEmails = await getAccessibleCustomEmails(userId);
+    const hasAccess = accessibleEmails.some(e => e._id.toString() === email.customEmailId.toString());
+
+    if (!hasAccess) {
+      return res.status(403).json({
+        success: false,
+        message: 'You do not have access to this email'
+      });
+    }
+
+    // Only allow permanent deletion if email is already in trash
+    if (!email.isTrashed) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email must be in trash to permanently delete'
+      });
+    }
+
+    // Permanently delete
+    await Email.deleteOne({ _id: email._id });
+
+    res.status(200).json({
+      success: true,
+      message: 'Email permanently deleted'
+    });
+
+  } catch (error) {
+    console.error('Permanent delete error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error permanently deleting email',
       error: error.message
     });
   }
@@ -1810,11 +1956,10 @@ const getEmailStats = async (req, res) => {
   }
 };
 
-// Export all controllers at the bottom
+// Export all controllers
 export {
   addResendConfig,
   getResendConfigs,
-  verifyDomainOwnership,
   createCustomEmail,
   inviteUserToDomain,
   acceptInvitation,
@@ -1832,9 +1977,13 @@ export {
   toggleStar,
   toggleArchive,
   deleteEmail,
+  restoreEmail,
+  permanentlyDeleteEmail,
   getEmailStats,
   notifyLoginAlert,
   notifyDomainVerified,
   notifyTeamInvite,
-  notifyNewEmail
+  notifyNewEmail,
+  addWebhookSecret,
+  getWebhookConfig
 };
