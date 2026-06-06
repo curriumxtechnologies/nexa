@@ -15,12 +15,11 @@ if (process.env.FIREBASE_PRIVATE_KEY) {
   try {
     let privateKey = process.env.FIREBASE_PRIVATE_KEY;
     
-    // Handle all possible formats
-    privateKey = privateKey
-      .replace(/\\n/g, '\n')  // escaped newlines
-      .replace(/^"|"$/g, '')  // remove wrapping quotes if any
-      .trim();
-
+    // Handle both formats
+    if (!privateKey.includes('\n')) {
+      privateKey = privateKey.replace(/\\n/g, '\n');
+    }
+    
     admin.initializeApp({
       credential: admin.credential.cert({
         projectId: process.env.FIREBASE_PROJECT_ID,
@@ -30,7 +29,6 @@ if (process.env.FIREBASE_PRIVATE_KEY) {
     });
     console.log('✅ Firebase initialized successfully');
   } catch (error) {
-    // Don't crash server if Firebase fails
     console.error('❌ Firebase initialization failed:', error.message);
   }
 }
