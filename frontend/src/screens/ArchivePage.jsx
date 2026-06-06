@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   useGetInboxQuery, 
@@ -18,9 +18,6 @@ import {
   Loader2,
   Paperclip,
   AlertCircle,
-  Mail,
-  MailOpen,
-  User,
   Inbox,
   X
 } from 'lucide-react';
@@ -75,10 +72,8 @@ const ArchivePage = () => {
     return colors[Math.abs(hash) % colors.length];
   };
 
-  // Apply filters to emails
-  const getFilteredEmails = (emailsToFilter) => {
+  const getFilteredEmails = useCallback((emailsToFilter) => {
     let filtered = [...emailsToFilter];
-    
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
       filtered = filtered.filter((email) =>
@@ -87,7 +82,6 @@ const ArchivePage = () => {
         getPlainText(email.content).toLowerCase().includes(term)
       );
     }
-    
     if (filterType === 'unread') {
       filtered = filtered.filter((email) => !email.isRead);
     } else if (filterType === 'starred') {
@@ -95,50 +89,32 @@ const ArchivePage = () => {
     } else if (filterType === 'hasAttachments') {
       filtered = filtered.filter((email) => email.attachments?.length > 0);
     }
-    
     return filtered;
-  };
+  }, [searchTerm, filterType]);
 
-  // Group by sender for mobile (WhatsApp style)
   const groupedBySender = useMemo(() => {
     const filteredEmails = getFilteredEmails(emails);
-    
     const map = new Map();
     filteredEmails.forEach((email) => {
       const key = email.from?.email || 'unknown';
       if (!map.has(key)) map.set(key, []);
       map.get(key).push(email);
     });
-
     const groups = Array.from(map.entries()).map(([senderEmail, mails]) => {
       const sorted = [...mails].sort(
-        (a, b) =>
-          new Date(b.receivedAt || b.createdAt) -
-          new Date(a.receivedAt || a.createdAt)
+        (a, b) => new Date(b.receivedAt || b.createdAt) - new Date(a.receivedAt || a.createdAt)
       );
       const hasAttachment = sorted.some((m) => m.attachments?.length > 0);
       const unreadCount = sorted.filter((m) => !m.isRead).length;
-      return {
-        senderEmail,
-        emails: sorted,
-        latest: sorted[0],
-        hasAttachment,
-        unreadCount,
-      };
+      return { senderEmail, emails: sorted, latest: sorted[0], hasAttachment, unreadCount };
     });
-
     groups.sort(
-      (a, b) =>
-        new Date(b.latest.receivedAt || b.latest.createdAt) -
-        new Date(a.latest.receivedAt || a.latest.createdAt)
+      (a, b) => new Date(b.latest.receivedAt || b.latest.createdAt) - new Date(a.latest.receivedAt || a.latest.createdAt)
     );
-
     return groups;
-  }, [emails, searchTerm, filterType]);
+  }, [emails, getFilteredEmails]);
 
-  const filteredEmails = useMemo(() => {
-    return getFilteredEmails(emails);
-  }, [emails, searchTerm, filterType]);
+  const filteredEmails = useMemo(() => getFilteredEmails(emails), [emails, getFilteredEmails]);
 
   const handleThreadClick = async (group) => {
     const unreadEmails = group.emails.filter(email => !email.isRead);
@@ -231,58 +207,225 @@ const ArchivePage = () => {
     );
   }
 
-  // ─── MOBILE VIEW (WhatsApp Style) ─────────────────────────────────────────────
-  const MobileView = () => (
-    <div className="flex flex-col h-screen bg-white md:hidden">
-      {/* Fixed Top Bar */}
-      <div className="sticky top-0 z-10 bg-white border-b border-gray-100">
-        <div className="px-3 pt-3 pb-2">
+  return (
+    <>
+      {/* ─── MOBILE VIEW ─────────────────────────────────────────────────────── */}
+      <div className="flex flex-col h-screen bg-white md:hidden">
+
+        {/* Fixed Top Bar */}
+        <div className="sticky top-0 z-10 bg-white border-b border-gray-100">
+          <div className="px-3 pt-3 pb-2">
+            <div className="flex items-center gap-2">
+              <h1 className="text-base font-semibold text-gray-900 flex-shrink-0">Archive</h1>
+              <div className="relative flex-1">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="Search"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full pl-8 pr-3 py-1.5 bg-gray-100 rounded-full text-xs focus:outline-none focus:ring-2 focus:ring-purple-400"
+                />
+              </div>
+              <div className="relative">
+                <button
+                  onClick={() => setShowFilterMenu(!showFilterMenu)}
+                  className={`p-1.5 rounded-full transition ${filterType !== 'all' ? 'bg-purple-100 text-purple-600' : 'text-gray-400'}`}
+                >
+                  <Filter className="w-4 h-4" />
+                </button>
+                {showFilterMenu && (
+                  <div className="absolute right-0 top-full mt-2 w-40 bg-white rounded-lg shadow-lg border border-gray-100 z-20">
+                    <div className="py-1">
+                      <button onClick={() => { setFilterType('all'); setShowFilterMenu(false); }} className={`w-full text-left px-3 py-2 text-xs ${filterType === 'all' ? 'bg-purple-50 text-purple-600' : 'text-gray-600'}`}>
+                        All emails
+                      </button>
+                      <button onClick={() => { setFilterType('unread'); setShowFilterMenu(false); }} className={`w-full text-left px-3 py-2 text-xs ${filterType === 'unread' ? 'bg-purple-50 text-purple-600' : 'text-gray-600'}`}>
+                        Unread only
+                      </button>
+                      <button onClick={() => { setFilterType('starred'); setShowFilterMenu(false); }} className={`w-full text-left px-3 py-2 text-xs ${filterType === 'starred' ? 'bg-purple-50 text-purple-600' : 'text-gray-600'}`}>
+                        Starred only
+                      </button>
+                      <button onClick={() => { setFilterType('hasAttachments'); setShowFilterMenu(false); }} className={`w-full text-left px-3 py-2 text-xs ${filterType === 'hasAttachments' ? 'bg-purple-50 text-purple-600' : 'text-gray-600'}`}>
+                        With attachments
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Active Filter Badge */}
+            {filterType !== 'all' && (
+              <div className="flex items-center mt-2">
+                <span className="text-xs bg-purple-100 text-purple-600 px-2 py-0.5 rounded-full flex items-center gap-1">
+                  Filter: {getFilterLabel()}
+                  <button onClick={() => setFilterType('all')}>
+                    <X className="w-3 h-3" />
+                  </button>
+                </span>
+              </div>
+            )}
+          </div>
+
+          {/* Bulk actions */}
+          {selectedEmails.length > 0 && (
+            <div className="flex items-center px-3 py-2 bg-purple-50 border-t border-purple-100 gap-3">
+              <span className="text-xs text-purple-700 flex-1">{selectedEmails.length} selected</span>
+              <button
+                className="text-xs text-purple-600 bg-white border border-purple-100 px-2.5 py-1 rounded-full"
+                onClick={() => {
+                  selectedEmails.forEach((id) => toggleArchive(id).unwrap().catch(() => {}));
+                  setSelectedEmails([]);
+                  refetch();
+                }}
+              >
+                Unarchive
+              </button>
+              <button
+                className="text-xs text-red-600 bg-white border border-red-100 px-2.5 py-1 rounded-full"
+                onClick={() => {
+                  selectedEmails.forEach((id) => deleteEmail(id).unwrap().catch(() => {}));
+                  setSelectedEmails([]);
+                  refetch();
+                }}
+              >
+                Delete
+              </button>
+              <button className="text-xs text-gray-400" onClick={() => setSelectedEmails([])}>
+                Cancel
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Scrollable Thread List */}
+        <div className="flex-1 overflow-y-auto">
+          {groupedBySender.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-full text-center px-6">
+              <Archive className="w-12 h-12 text-gray-200 mb-3" />
+              <p className="text-sm text-gray-400">Archive is empty</p>
+              <p className="text-xs text-gray-300 mt-1">Archived emails will appear here</p>
+            </div>
+          ) : (
+            groupedBySender.map((group) => {
+              const { senderEmail, latest, hasAttachment, unreadCount, emails: threadEmails } = group;
+              const isSelected = selectedEmails.includes(latest.emailId);
+              return (
+                <div
+                  key={senderEmail}
+                  onClick={() => handleThreadClick(group)}
+                  className={`flex items-center px-3 py-2.5 border-b border-gray-100 active:bg-gray-50 transition-colors cursor-pointer ${!latest.isRead ? 'bg-purple-50/20' : ''}`}
+                >
+                  {/* Avatar */}
+                  <div className="relative flex-shrink-0 mr-3">
+                    <div
+                      className={`w-10 h-10 rounded-full flex items-center justify-center text-white text-xs font-semibold ${getAvatarColor(senderEmail)}`}
+                      onClick={(e) => handleSelect(e, latest.emailId)}
+                    >
+                      {isSelected ? (
+                        <span className="text-white text-sm">✓</span>
+                      ) : (
+                        getInitials(senderEmail)
+                      )}
+                    </div>
+                    {unreadCount > 0 && (
+                      <div className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-purple-500 flex items-center justify-center">
+                        <span className="text-white text-[8px] font-bold">{unreadCount}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Content */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between mb-0.5">
+                      <p className={`text-sm truncate mr-2 ${!latest.isRead ? 'font-semibold text-gray-900' : 'font-normal text-gray-700'}`}>
+                        {senderEmail}
+                      </p>
+                      <span className="text-xs text-gray-400 whitespace-nowrap">
+                        {formatDate(latest.receivedAt || latest.createdAt)}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <div className="flex-1 min-w-0 pr-2">
+                        <p className={`text-xs truncate ${!latest.isRead ? 'font-medium text-gray-700' : 'text-gray-500'}`}>
+                          {latest.subject || '(No Subject)'}
+                        </p>
+                        <p className="text-xs text-gray-400 truncate mt-0.5">
+                          {getPlainText(latest.content).slice(0, 60)}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-1.5 flex-shrink-0">
+                        {hasAttachment && <Paperclip className="w-3 h-3 text-gray-400" />}
+                        {threadEmails.length > 1 && (
+                          <span className="text-xs text-gray-400">{threadEmails.length}</span>
+                        )}
+                        <button onClick={(e) => handleStarToggle(e, latest.emailId)} className="focus:outline-none">
+                          <Star className={`w-3.5 h-3.5 ${latest.isStarred ? 'fill-yellow-400 text-yellow-400' : 'text-gray-300 hover:text-yellow-400'}`} />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        {/* Pagination */}
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between px-4 py-2 border-t border-gray-100 bg-white">
+            <button onClick={() => setPage((p) => p - 1)} disabled={page === 1} className="p-1 disabled:opacity-30">
+              <ChevronLeft className="w-5 h-5 text-gray-600" />
+            </button>
+            <span className="text-xs text-gray-400">{page} / {totalPages}</span>
+            <button onClick={() => setPage((p) => p + 1)} disabled={page === totalPages} className="p-1 disabled:opacity-30">
+              <ChevronRight className="w-5 h-5 text-gray-600" />
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* ─── DESKTOP VIEW ────────────────────────────────────────────────────── */}
+      <div className="hidden md:flex flex-col h-screen bg-gray-50">
+
+        {/* Header */}
+        <div className="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between sticky top-0 z-10">
           <div className="flex items-center gap-2">
-            <h1 className="text-base font-semibold text-gray-900 flex-shrink-0">Archive</h1>
-            <div className="relative flex-1">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+            <Archive className="w-5 h-5 text-purple-600" />
+            <h1 className="text-lg font-semibold text-gray-800">Archive</h1>
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
               <input
                 type="text"
-                placeholder="Search"
+                placeholder="Search archive..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-8 pr-3 py-1.5 bg-gray-100 rounded-full text-xs focus:outline-none focus:ring-2 focus:ring-purple-400"
+                className="pl-9 pr-4 py-1.5 bg-gray-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-400 w-64"
               />
             </div>
             <div className="relative">
               <button
                 onClick={() => setShowFilterMenu(!showFilterMenu)}
-                className={`p-1.5 rounded-full transition ${filterType !== 'all' ? 'bg-purple-100 text-purple-600' : 'text-gray-400'}`}
+                className={`p-1.5 rounded-lg transition ${filterType !== 'all' ? 'bg-purple-100 text-purple-600' : 'text-gray-400 hover:text-gray-600'}`}
               >
                 <Filter className="w-4 h-4" />
               </button>
-              
-              {/* Filter Menu */}
               {showFilterMenu && (
-                <div className="absolute right-0 top-full mt-2 w-40 bg-white rounded-lg shadow-lg border border-gray-100 z-20">
+                <div className="absolute right-0 top-full mt-1 w-48 bg-white rounded-lg shadow-lg border border-gray-100 z-20">
                   <div className="py-1">
-                    <button
-                      onClick={() => { setFilterType('all'); setShowFilterMenu(false); }}
-                      className={`w-full text-left px-3 py-2 text-xs ${filterType === 'all' ? 'bg-purple-50 text-purple-600' : 'text-gray-600'}`}
-                    >
+                    <button onClick={() => { setFilterType('all'); setShowFilterMenu(false); }} className={`w-full text-left px-3 py-2 text-sm ${filterType === 'all' ? 'bg-purple-50 text-purple-600' : 'text-gray-600 hover:bg-gray-50'}`}>
                       All emails
                     </button>
-                    <button
-                      onClick={() => { setFilterType('unread'); setShowFilterMenu(false); }}
-                      className={`w-full text-left px-3 py-2 text-xs ${filterType === 'unread' ? 'bg-purple-50 text-purple-600' : 'text-gray-600'}`}
-                    >
+                    <button onClick={() => { setFilterType('unread'); setShowFilterMenu(false); }} className={`w-full text-left px-3 py-2 text-sm ${filterType === 'unread' ? 'bg-purple-50 text-purple-600' : 'text-gray-600 hover:bg-gray-50'}`}>
                       Unread only
                     </button>
-                    <button
-                      onClick={() => { setFilterType('starred'); setShowFilterMenu(false); }}
-                      className={`w-full text-left px-3 py-2 text-xs ${filterType === 'starred' ? 'bg-purple-50 text-purple-600' : 'text-gray-600'}`}
-                    >
+                    <button onClick={() => { setFilterType('starred'); setShowFilterMenu(false); }} className={`w-full text-left px-3 py-2 text-sm ${filterType === 'starred' ? 'bg-purple-50 text-purple-600' : 'text-gray-600 hover:bg-gray-50'}`}>
                       Starred only
                     </button>
-                    <button
-                      onClick={() => { setFilterType('hasAttachments'); setShowFilterMenu(false); }}
-                      className={`w-full text-left px-3 py-2 text-xs ${filterType === 'hasAttachments' ? 'bg-purple-50 text-purple-600' : 'text-gray-600'}`}
-                    >
+                    <button onClick={() => { setFilterType('hasAttachments'); setShowFilterMenu(false); }} className={`w-full text-left px-3 py-2 text-sm ${filterType === 'hasAttachments' ? 'bg-purple-50 text-purple-600' : 'text-gray-600 hover:bg-gray-50'}`}>
                       With attachments
                     </button>
                   </div>
@@ -290,36 +433,24 @@ const ArchivePage = () => {
               )}
             </div>
           </div>
-          
-          {/* Active Filter Badge */}
-          {filterType !== 'all' && (
-            <div className="flex items-center mt-2">
-              <span className="text-xs bg-purple-100 text-purple-600 px-2 py-0.5 rounded-full flex items-center gap-1">
-                Filter: {getFilterLabel()}
-                <button onClick={() => setFilterType('all')}>
-                  <X className="w-3 h-3" />
-                </button>
-              </span>
-            </div>
-          )}
         </div>
 
         {/* Bulk actions */}
         {selectedEmails.length > 0 && (
-          <div className="flex items-center px-3 py-2 bg-purple-50 border-t border-purple-100 gap-3">
-            <span className="text-xs text-purple-700 flex-1">{selectedEmails.length} selected</span>
+          <div className="flex items-center px-6 py-2 bg-purple-50 border-b border-purple-100 gap-4">
+            <span className="text-sm text-purple-700">{selectedEmails.length} selected</span>
             <button
-              className="text-xs text-purple-600 bg-white border border-purple-100 px-2.5 py-1 rounded-full"
+              className="text-sm text-purple-600 hover:text-purple-800"
               onClick={() => {
                 selectedEmails.forEach((id) => toggleArchive(id).unwrap().catch(() => {}));
                 setSelectedEmails([]);
                 refetch();
               }}
             >
-              Unarchive
+              Move to Inbox
             </button>
             <button
-              className="text-xs text-red-600 bg-white border border-red-100 px-2.5 py-1 rounded-full"
+              className="text-sm text-red-500 hover:text-red-700"
               onClick={() => {
                 selectedEmails.forEach((id) => deleteEmail(id).unwrap().catch(() => {}));
                 setSelectedEmails([]);
@@ -328,343 +459,115 @@ const ArchivePage = () => {
             >
               Delete
             </button>
-            <button className="text-xs text-gray-400" onClick={() => setSelectedEmails([])}>
+            <button className="text-sm text-gray-400 hover:text-gray-600 ml-auto" onClick={() => setSelectedEmails([])}>
               Cancel
             </button>
           </div>
         )}
-      </div>
 
-      {/* Scrollable Thread List */}
-      <div className="flex-1 overflow-y-auto">
-        {groupedBySender.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full text-center px-6">
-            <Archive className="w-12 h-12 text-gray-200 mb-3" />
-            <p className="text-sm text-gray-400">Archive is empty</p>
-            <p className="text-xs text-gray-300 mt-1">Archived emails will appear here</p>
+        {/* Table header */}
+        <div className="bg-white border-b border-gray-200 px-6 py-2 flex items-center gap-4 text-xs font-medium text-gray-400 uppercase tracking-wide">
+          <input
+            type="checkbox"
+            checked={selectedEmails.length === filteredEmails.length && filteredEmails.length > 0}
+            onChange={handleSelectAll}
+            className="rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+          />
+          <div className="flex-1 grid grid-cols-12 gap-4">
+            <span className="col-span-3">From</span>
+            <span className="col-span-3">Subject</span>
+            <span className="col-span-3">Preview</span>
+            <span className="col-span-1">Star</span>
+            <span className="col-span-2 text-right">Date</span>
           </div>
-        ) : (
-          groupedBySender.map((group) => {
-            const { senderEmail, latest, hasAttachment, unreadCount, emails: threadEmails } = group;
-            const isSelected = selectedEmails.includes(latest.emailId);
+        </div>
 
-            return (
+        {/* Email rows */}
+        <div className="flex-1 overflow-y-auto bg-white">
+          {filteredEmails.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-full">
+              <Archive className="w-14 h-14 text-gray-200 mb-3" />
+              <p className="text-gray-400">Archive is empty</p>
+              <p className="text-gray-300 text-sm mt-1">Archived emails will appear here</p>
+            </div>
+          ) : (
+            filteredEmails.map((email) => (
               <div
-                key={senderEmail}
-                onClick={() => handleThreadClick(group)}
-                className={`flex items-center px-3 py-2.5 border-b border-gray-100 active:bg-gray-50 transition-colors cursor-pointer ${
-                  !latest.isRead ? 'bg-purple-50/20' : ''
-                }`}
+                key={email.emailId}
+                onClick={() => handleEmailClick(email)}
+                className={`group flex items-center gap-4 px-6 py-3 border-b border-gray-100 cursor-pointer hover:bg-gray-50 transition-colors ${!email.isRead ? 'bg-purple-50/20' : ''}`}
               >
-                {/* Avatar */}
-                <div className="relative flex-shrink-0 mr-3">
-                  <div
-                    className={`w-10 h-10 rounded-full flex items-center justify-center text-white text-xs font-semibold ${getAvatarColor(senderEmail)}`}
-                    onClick={(e) => handleSelect(e, latest.emailId)}
-                  >
-                    {isSelected ? (
-                      <span className="text-white text-sm">✓</span>
-                    ) : (
-                      getInitials(senderEmail)
+                <input
+                  type="checkbox"
+                  checked={selectedEmails.includes(email.emailId)}
+                  onChange={(e) => handleSelect(e, email.emailId)}
+                  onClick={(e) => e.stopPropagation()}
+                  className="rounded border-gray-300 text-purple-600 focus:ring-purple-500 flex-shrink-0"
+                />
+                <div className="flex-1 grid grid-cols-12 gap-4 min-w-0 items-center">
+                  <div className="col-span-3 min-w-0">
+                    <div className="flex items-center gap-2">
+                      {!email.isRead && <div className="w-2 h-2 rounded-full bg-purple-500 flex-shrink-0" />}
+                      <span className={`text-sm truncate ${!email.isRead ? 'font-semibold text-gray-900' : 'text-gray-600'}`}>
+                        {email.from?.email || 'Unknown'}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="col-span-3 flex items-center gap-1.5 min-w-0">
+                    <span className={`text-sm truncate ${!email.isRead ? 'font-semibold text-gray-900' : 'text-gray-800'}`}>
+                      {email.subject || '(No Subject)'}
+                    </span>
+                    {email.attachments?.length > 0 && (
+                      <Paperclip className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
                     )}
                   </div>
-                  {/* Unread indicator */}
-                  {unreadCount > 0 && (
-                    <div className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-purple-500 flex items-center justify-center">
-                      <span className="text-white text-[8px] font-bold">{unreadCount}</span>
-                    </div>
-                  )}
-                </div>
-
-                {/* Content */}
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between mb-0.5">
-                    <p className={`text-sm truncate mr-2 ${!latest.isRead ? 'font-semibold text-gray-900' : 'font-normal text-gray-700'}`}>
-                      {senderEmail}
-                    </p>
-                    <span className="text-xs text-gray-400 whitespace-nowrap">
-                      {formatDate(latest.receivedAt || latest.createdAt)}
+                  <div className="col-span-3 min-w-0">
+                    <span className={`text-sm truncate block ${!email.isRead ? 'text-gray-700' : 'text-gray-400'}`}>
+                      {getPlainText(email.content).slice(0, 80)}
                     </span>
                   </div>
-
-                  <div className="flex items-center justify-between">
-                    <div className="flex-1 min-w-0 pr-2">
-                      <p className={`text-xs truncate ${!latest.isRead ? 'font-medium text-gray-700' : 'text-gray-500'}`}>
-                        {latest.subject || '(No Subject)'}
-                      </p>
-                      <p className="text-xs text-gray-400 truncate mt-0.5">
-                        {getPlainText(latest.content).slice(0, 60)}
-                      </p>
-                    </div>
-
-                    <div className="flex items-center gap-1.5 flex-shrink-0">
-                      {hasAttachment && <Paperclip className="w-3 h-3 text-gray-400" />}
-                      {threadEmails.length > 1 && (
-                        <span className="text-xs text-gray-400">{threadEmails.length}</span>
-                      )}
-                      <button
-                        onClick={(e) => handleStarToggle(e, latest.emailId)}
-                        className="focus:outline-none"
-                      >
-                        <Star
-                          className={`w-3.5 h-3.5 ${
-                            latest.isStarred
-                              ? 'fill-yellow-400 text-yellow-400'
-                              : 'text-gray-300 hover:text-yellow-400'
-                          }`}
-                        />
+                  <div className="col-span-1 flex items-center justify-start">
+                    <button onClick={(e) => handleStarToggle(e, email.emailId)} className="focus:outline-none">
+                      <Star className={`w-4 h-4 ${email.isStarred ? 'fill-yellow-400 text-yellow-400' : 'text-gray-300 hover:text-yellow-400'}`} />
+                    </button>
+                  </div>
+                  <div className="col-span-2 flex items-center justify-end gap-2">
+                    <span className="text-xs text-gray-400 whitespace-nowrap">
+                      {formatDate(email.receivedAt || email.createdAt)}
+                    </span>
+                    <div className="hidden group-hover:flex items-center gap-1">
+                      <button onClick={(e) => handleUnarchive(e, email.emailId)} className="p-1 text-purple-500 hover:text-purple-700 rounded" title="Move to Inbox">
+                        <Inbox className="w-3.5 h-3.5" />
+                      </button>
+                      <button onClick={(e) => handleDelete(e, email.emailId)} className="p-1 text-gray-400 hover:text-red-500 rounded" title="Delete">
+                        <Trash2 className="w-3.5 h-3.5" />
                       </button>
                     </div>
                   </div>
                 </div>
               </div>
-            );
-          })
-        )}
-      </div>
-
-      {/* Pagination */}
-      {totalPages > 1 && (
-        <div className="flex items-center justify-between px-4 py-2 border-t border-gray-100 bg-white">
-          <button onClick={() => setPage((p) => p - 1)} disabled={page === 1} className="p-1 disabled:opacity-30">
-            <ChevronLeft className="w-5 h-5 text-gray-600" />
-          </button>
-          <span className="text-xs text-gray-400">{page} / {totalPages}</span>
-          <button onClick={() => setPage((p) => p + 1)} disabled={page === totalPages} className="p-1 disabled:opacity-30">
-            <ChevronRight className="w-5 h-5 text-gray-600" />
-          </button>
+            ))
+          )}
         </div>
-      )}
-    </div>
-  );
 
-  // ─── DESKTOP VIEW ─────────────────────────────────────────────────────────────
-  const DesktopView = () => (
-    <div className="hidden md:flex flex-col h-screen bg-gray-50">
-      {/* Header */}
-      <div className="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between sticky top-0 z-10">
-        <div className="flex items-center gap-2">
-          <Archive className="w-5 h-5 text-purple-600" />
-          <h1 className="text-lg font-semibold text-gray-800">Archive</h1>
-        </div>
-        <div className="flex items-center gap-3">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Search archive..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-9 pr-4 py-1.5 bg-gray-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-400 w-64"
-            />
-          </div>
-          <div className="relative">
-            <button
-              onClick={() => setShowFilterMenu(!showFilterMenu)}
-              className={`p-1.5 rounded-lg transition ${filterType !== 'all' ? 'bg-purple-100 text-purple-600' : 'text-gray-400 hover:text-gray-600'}`}
-            >
-              <Filter className="w-4 h-4" />
-            </button>
-            {showFilterMenu && (
-              <div className="absolute right-0 top-full mt-1 w-48 bg-white rounded-lg shadow-lg border border-gray-100 z-20">
-                <div className="py-1">
-                  <button onClick={() => { setFilterType('all'); setShowFilterMenu(false); }} className={`w-full text-left px-3 py-2 text-sm ${filterType === 'all' ? 'bg-purple-50 text-purple-600' : 'text-gray-600 hover:bg-gray-50'}`}>
-                    All emails
-                  </button>
-                  <button onClick={() => { setFilterType('unread'); setShowFilterMenu(false); }} className={`w-full text-left px-3 py-2 text-sm ${filterType === 'unread' ? 'bg-purple-50 text-purple-600' : 'text-gray-600 hover:bg-gray-50'}`}>
-                    Unread only
-                  </button>
-                  <button onClick={() => { setFilterType('starred'); setShowFilterMenu(false); }} className={`w-full text-left px-3 py-2 text-sm ${filterType === 'starred' ? 'bg-purple-50 text-purple-600' : 'text-gray-600 hover:bg-gray-50'}`}>
-                    Starred only
-                  </button>
-                  <button onClick={() => { setFilterType('hasAttachments'); setShowFilterMenu(false); }} className={`w-full text-left px-3 py-2 text-sm ${filterType === 'hasAttachments' ? 'bg-purple-50 text-purple-600' : 'text-gray-600 hover:bg-gray-50'}`}>
-                    With attachments
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Bulk actions */}
-      {selectedEmails.length > 0 && (
-        <div className="flex items-center px-6 py-2 bg-purple-50 border-b border-purple-100 gap-4">
-          <span className="text-sm text-purple-700">{selectedEmails.length} selected</span>
-          <button
-            className="text-sm text-purple-600 hover:text-purple-800"
-            onClick={() => {
-              selectedEmails.forEach((id) => toggleArchive(id).unwrap().catch(() => {}));
-              setSelectedEmails([]);
-              refetch();
-            }}
-          >
-            Move to Inbox
-          </button>
-          <button
-            className="text-sm text-red-500 hover:text-red-700"
-            onClick={() => {
-              selectedEmails.forEach((id) => deleteEmail(id).unwrap().catch(() => {}));
-              setSelectedEmails([]);
-              refetch();
-            }}
-          >
-            Delete
-          </button>
-          <button className="text-sm text-gray-400 hover:text-gray-600 ml-auto" onClick={() => setSelectedEmails([])}>
-            Cancel
-          </button>
-        </div>
-      )}
-
-      {/* Table header */}
-      <div className="bg-white border-b border-gray-200 px-6 py-2 flex items-center gap-4 text-xs font-medium text-gray-400 uppercase tracking-wide">
-        <input
-          type="checkbox"
-          checked={selectedEmails.length === filteredEmails.length && filteredEmails.length > 0}
-          onChange={handleSelectAll}
-          className="rounded border-gray-300 text-purple-600 focus:ring-purple-500"
-        />
-        <div className="flex-1 grid grid-cols-12 gap-4">
-          <span className="col-span-3">From</span>
-          <span className="col-span-3">Subject</span>
-          <span className="col-span-3">Preview</span>
-          <span className="col-span-1">Star</span>
-          <span className="col-span-2 text-right">Date</span>
-        </div>
-      </div>
-
-      {/* Email rows */}
-      <div className="flex-1 overflow-y-auto bg-white">
-        {filteredEmails.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full">
-            <Archive className="w-14 h-14 text-gray-200 mb-3" />
-            <p className="text-gray-400">Archive is empty</p>
-            <p className="text-gray-300 text-sm mt-1">Archived emails will appear here</p>
-          </div>
-        ) : (
-          filteredEmails.map((email) => (
-            <div
-              key={email.emailId}
-              onClick={() => handleEmailClick(email)}
-              className={`group flex items-center gap-4 px-6 py-3 border-b border-gray-100 cursor-pointer hover:bg-gray-50 transition-colors ${
-                !email.isRead ? 'bg-purple-50/20' : ''
-              }`}
-            >
-              <input
-                type="checkbox"
-                checked={selectedEmails.includes(email.emailId)}
-                onChange={(e) => handleSelect(e, email.emailId)}
-                onClick={(e) => e.stopPropagation()}
-                className="rounded border-gray-300 text-purple-600 focus:ring-purple-500 flex-shrink-0"
-              />
-
-              <div className="flex-1 grid grid-cols-12 gap-4 min-w-0 items-center">
-                {/* From */}
-                <div className="col-span-3 min-w-0">
-                  <div className="flex items-center gap-2">
-                    {!email.isRead && (
-                      <div className="w-2 h-2 rounded-full bg-purple-500 flex-shrink-0" />
-                    )}
-                    <span className={`text-sm truncate ${!email.isRead ? 'font-semibold text-gray-900' : 'text-gray-600'}`}>
-                      {email.from?.email || 'Unknown'}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Subject */}
-                <div className="col-span-3 flex items-center gap-1.5 min-w-0">
-                  <span className={`text-sm truncate ${!email.isRead ? 'font-semibold text-gray-900' : 'text-gray-800'}`}>
-                    {email.subject || '(No Subject)'}
-                  </span>
-                  {email.attachments?.length > 0 && (
-                    <Paperclip className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
-                  )}
-                </div>
-
-                {/* Preview */}
-                <div className="col-span-3 min-w-0">
-                  <span className={`text-sm truncate block ${!email.isRead ? 'text-gray-700' : 'text-gray-400'}`}>
-                    {getPlainText(email.content).slice(0, 80)}
-                  </span>
-                </div>
-
-                {/* Star */}
-                <div className="col-span-1 flex items-center justify-start">
-                  <button
-                    onClick={(e) => handleStarToggle(e, email.emailId)}
-                    className="focus:outline-none"
-                  >
-                    <Star
-                      className={`w-4 h-4 ${
-                        email.isStarred
-                          ? 'fill-yellow-400 text-yellow-400'
-                          : 'text-gray-300 hover:text-yellow-400'
-                      }`}
-                    />
-                  </button>
-                </div>
-
-                {/* Date + Actions */}
-                <div className="col-span-2 flex items-center justify-end gap-2">
-                  <span className="text-xs text-gray-400 whitespace-nowrap">
-                    {formatDate(email.receivedAt || email.createdAt)}
-                  </span>
-                  <div className="hidden group-hover:flex items-center gap-1">
-                    <button
-                      onClick={(e) => handleUnarchive(e, email.emailId)}
-                      className="p-1 text-purple-500 hover:text-purple-700 rounded"
-                      title="Move to Inbox"
-                    >
-                      <Inbox className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      onClick={(e) => handleDelete(e, email.emailId)}
-                      className="p-1 text-gray-400 hover:text-red-500 rounded"
-                      title="Delete"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </div>
-              </div>
+        {/* Pagination */}
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between px-6 py-3 bg-white border-t border-gray-200">
+            <p className="text-sm text-gray-400">
+              Showing {(page - 1) * limit + 1}–{Math.min(page * limit, total)} of {total}
+            </p>
+            <div className="flex items-center gap-2">
+              <button onClick={() => setPage((p) => p - 1)} disabled={page === 1} className="p-1.5 rounded-lg disabled:opacity-30 hover:bg-gray-100 transition">
+                <ChevronLeft className="w-4 h-4 text-gray-600" />
+              </button>
+              <span className="text-sm text-gray-500">{page} of {totalPages}</span>
+              <button onClick={() => setPage((p) => p + 1)} disabled={page === totalPages} className="p-1.5 rounded-lg disabled:opacity-30 hover:bg-gray-100 transition">
+                <ChevronRight className="w-4 h-4 text-gray-600" />
+              </button>
             </div>
-          ))
+          </div>
         )}
       </div>
-
-      {/* Pagination */}
-      {totalPages > 1 && (
-        <div className="flex items-center justify-between px-6 py-3 bg-white border-t border-gray-200">
-          <p className="text-sm text-gray-400">
-            Showing {(page - 1) * limit + 1}–{Math.min(page * limit, total)} of {total}
-          </p>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setPage((p) => p - 1)}
-              disabled={page === 1}
-              className="p-1.5 rounded-lg disabled:opacity-30 hover:bg-gray-100 transition"
-            >
-              <ChevronLeft className="w-4 h-4 text-gray-600" />
-            </button>
-            <span className="text-sm text-gray-500">{page} of {totalPages}</span>
-            <button
-              onClick={() => setPage((p) => p + 1)}
-              disabled={page === totalPages}
-              className="p-1.5 rounded-lg disabled:opacity-30 hover:bg-gray-100 transition"
-            >
-              <ChevronRight className="w-4 h-4 text-gray-600" />
-            </button>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-
-  return (
-    <>
-      <MobileView />
-      <DesktopView />
     </>
   );
 };

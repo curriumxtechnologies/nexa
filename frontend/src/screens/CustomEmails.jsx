@@ -102,7 +102,6 @@ const CustomEmails = () => {
 
       await createCustomEmail(formData).unwrap();
       
-      // Reset form
       setUsername('');
       setForwardToEmail('');
       setIsDefault(false);
@@ -139,7 +138,7 @@ const CustomEmails = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 pb-20 lg:pb-0">
       {/* Header */}
       <div className="bg-white border-b border-gray-100 sticky top-0 z-10">
         <div className="px-4 py-4 lg:px-8">
@@ -302,12 +301,12 @@ const CustomEmails = () => {
         )}
       </div>
 
-      {/* Create Custom Email Modal */}
+      {/* Create Custom Email Modal - Fixed for mobile */}
       {showCreateModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
-            <div className="p-5">
-              <div className="flex items-center justify-between mb-4">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-end lg:items-center justify-center z-50 p-0 lg:p-4">
+          <div className="bg-white rounded-t-xl lg:rounded-xl shadow-xl w-full max-w-md max-h-[85vh] overflow-y-auto lg:max-h-[90vh]">
+            <div className="p-5 sticky top-0 bg-white border-b border-gray-100 z-10">
+              <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-2">
                   <div className="p-1.5 bg-purple-50 rounded-lg">
                     <Plus className="w-4 h-4 text-purple-600" />
@@ -332,186 +331,186 @@ const CustomEmails = () => {
                   <X className="w-5 h-5" />
                 </button>
               </div>
+            </div>
 
-              <form onSubmit={handleSubmit} className="space-y-4">
-                {error && (
-                  <div className="p-3 bg-red-50 rounded-lg">
-                    <p className="text-sm text-red-600">{error}</p>
-                  </div>
-                )}
+            <form onSubmit={handleSubmit} className="p-5 space-y-4 pb-8">
+              {error && (
+                <div className="p-3 bg-red-50 rounded-lg">
+                  <p className="text-sm text-red-600">{error}</p>
+                </div>
+              )}
 
-                {/* Profile Picture */}
-                <div className="flex justify-center">
-                  <label className="cursor-pointer">
-                    <div className="relative">
-                      {profilePreview ? (
-                        <img
-                          src={profilePreview}
-                          alt="Profile preview"
-                          className="w-16 h-16 rounded-full object-cover border-2 border-purple-200"
-                        />
-                      ) : (
-                        <div className="w-16 h-16 bg-purple-50 rounded-full flex items-center justify-center border-2 border-purple-200">
-                          <Camera className="w-6 h-6 text-purple-600" />
-                        </div>
-                      )}
-                      <div className="absolute bottom-0 right-0 bg-purple-600 rounded-full p-1 border-2 border-white">
-                        <Camera className="w-3 h-3 text-white" />
+              {/* Profile Picture */}
+              <div className="flex justify-center">
+                <label className="cursor-pointer">
+                  <div className="relative">
+                    {profilePreview ? (
+                      <img
+                        src={profilePreview}
+                        alt="Profile preview"
+                        className="w-16 h-16 rounded-full object-cover border-2 border-purple-200"
+                      />
+                    ) : (
+                      <div className="w-16 h-16 bg-purple-50 rounded-full flex items-center justify-center border-2 border-purple-200">
+                        <Camera className="w-6 h-6 text-purple-600" />
                       </div>
+                    )}
+                    <div className="absolute bottom-0 right-0 bg-purple-600 rounded-full p-1 border-2 border-white">
+                      <Camera className="w-3 h-3 text-white" />
                     </div>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      onChange={handleFileChange}
-                      className="hidden"
-                    />
-                  </label>
-                </div>
-
-                {/* Domain Selection */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Select Domain
-                  </label>
-                  <select
-                    value={selectedResendConfigId}
-                    onChange={(e) => setSelectedResendConfigId(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-400 focus:border-transparent outline-none text-sm"
-                    required
-                  >
-                    <option value="">Select a domain</option>
-                    {domains.map((domain) => (
-                      <option key={domain.id} value={domain.id}>
-                        {domain.domain}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Username */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Username
-                  </label>
-                  <div className="flex items-center space-x-2">
-                    <input
-                      type="text"
-                      value={username}
-                      onChange={(e) => setUsername(e.target.value.toLowerCase())}
-                      placeholder="support"
-                      className="flex-1 px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-400 focus:border-transparent outline-none text-sm"
-                      required
-                    />
-                    <span className="text-gray-500 text-sm">@</span>
-                    <span className="text-gray-600 text-sm">
-                      {domains.find(d => d.id === selectedResendConfigId)?.domain || 'domain.com'}
-                    </span>
                   </div>
-                </div>
-
-                {/* Display Name */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Display Name (Optional)
-                  </label>
                   <input
-                    type="text"
-                    value={displayName}
-                    onChange={(e) => setDisplayName(e.target.value)}
-                    placeholder="John Doe"
-                    className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-400 focus:border-transparent outline-none text-sm"
+                    type="file"
+                    accept="image/*"
+                    onChange={handleFileChange}
+                    className="hidden"
                   />
-                </div>
+                </label>
+              </div>
 
-                {/* Forward To Email */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Forward To Email
-                  </label>
-                  <input
-                    type="email"
-                    value={forwardToEmail}
-                    onChange={(e) => setForwardToEmail(e.target.value)}
-                    placeholder="your-personal@email.com"
-                    className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-400 focus:border-transparent outline-none text-sm"
-                    required
-                  />
-                  <p className="text-xs text-gray-400 mt-1">
-                    Emails will be forwarded to this address
-                  </p>
-                </div>
+              {/* Domain Selection */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Select Domain
+                </label>
+                <select
+                  value={selectedResendConfigId}
+                  onChange={(e) => setSelectedResendConfigId(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-400 focus:border-transparent outline-none text-sm"
+                  required
+                >
+                  <option value="">Select a domain</option>
+                  {domains.map((domain) => (
+                    <option key={domain.id} value={domain.id}>
+                      {domain.domain}
+                    </option>
+                  ))}
+                </select>
+              </div>
 
-                {/* Signature */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Email Signature (Optional)
-                  </label>
-                  <textarea
-                    value={signature}
-                    onChange={(e) => setSignature(e.target.value)}
-                    rows="2"
-                    placeholder="Best regards,&#10;John Doe"
-                    className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-400 focus:border-transparent outline-none text-sm"
-                  />
-                </div>
-
-                {/* Default Checkbox */}
+              {/* Username */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Username
+                </label>
                 <div className="flex items-center space-x-2">
                   <input
-                    type="checkbox"
-                    id="isDefault"
-                    checked={isDefault}
-                    onChange={(e) => setIsDefault(e.target.checked)}
-                    className="rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+                    type="text"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value.toLowerCase())}
+                    placeholder="support"
+                    className="flex-1 px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-400 focus:border-transparent outline-none text-sm"
+                    required
                   />
-                  <label htmlFor="isDefault" className="text-sm text-gray-700">
-                    Set as default email address
-                  </label>
+                  <span className="text-gray-500 text-sm">@</span>
+                  <span className="text-gray-600 text-sm">
+                    {domains.find(d => d.id === selectedResendConfigId)?.domain || 'domain.com'}
+                  </span>
                 </div>
+              </div>
 
-                <div className="flex items-center space-x-3 pt-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowCreateModal(false);
-                      setError('');
-                      setUsername('');
-                      setForwardToEmail('');
-                      setIsDefault(false);
-                      setDisplayName('');
-                      setSignature('');
-                      setProfilePicture(null);
-                      setProfilePreview(null);
-                      setSelectedResendConfigId('');
-                    }}
-                    className="flex-1 px-4 py-2 border border-gray-200 text-gray-700 text-sm rounded-lg hover:bg-gray-50 transition"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={isSubmitting}
-                    className="flex-1 px-4 py-2 bg-purple-600 text-white text-sm rounded-lg hover:bg-purple-700 transition disabled:opacity-50"
-                  >
-                    {isSubmitting ? (
-                      <Loader2 className="w-4 h-4 animate-spin mx-auto" />
-                    ) : (
-                      'Create Email'
-                    )}
-                  </button>
-                </div>
-              </form>
-            </div>
+              {/* Display Name */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Display Name (Optional)
+                </label>
+                <input
+                  type="text"
+                  value={displayName}
+                  onChange={(e) => setDisplayName(e.target.value)}
+                  placeholder="John Doe"
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-400 focus:border-transparent outline-none text-sm"
+                />
+              </div>
+
+              {/* Forward To Email */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Forward To Email
+                </label>
+                <input
+                  type="email"
+                  value={forwardToEmail}
+                  onChange={(e) => setForwardToEmail(e.target.value)}
+                  placeholder="your-personal@email.com"
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-400 focus:border-transparent outline-none text-sm"
+                  required
+                />
+                <p className="text-xs text-gray-400 mt-1">
+                  Emails will be forwarded to this address
+                </p>
+              </div>
+
+              {/* Signature */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Email Signature (Optional)
+                </label>
+                <textarea
+                  value={signature}
+                  onChange={(e) => setSignature(e.target.value)}
+                  rows="2"
+                  placeholder="Best regards,&#10;John Doe"
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-400 focus:border-transparent outline-none text-sm"
+                />
+              </div>
+
+              {/* Default Checkbox */}
+              <div className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  id="isDefault"
+                  checked={isDefault}
+                  onChange={(e) => setIsDefault(e.target.checked)}
+                  className="rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+                />
+                <label htmlFor="isDefault" className="text-sm text-gray-700">
+                  Set as default email address
+                </label>
+              </div>
+
+              <div className="flex items-center space-x-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowCreateModal(false);
+                    setError('');
+                    setUsername('');
+                    setForwardToEmail('');
+                    setIsDefault(false);
+                    setDisplayName('');
+                    setSignature('');
+                    setProfilePicture(null);
+                    setProfilePreview(null);
+                    setSelectedResendConfigId('');
+                  }}
+                  className="flex-1 px-4 py-2 border border-gray-200 text-gray-700 text-sm rounded-lg hover:bg-gray-50 transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="flex-1 px-4 py-2 bg-purple-600 text-white text-sm rounded-lg hover:bg-purple-700 transition disabled:opacity-50"
+                >
+                  {isSubmitting ? (
+                    <Loader2 className="w-4 h-4 animate-spin mx-auto" />
+                  ) : (
+                    'Create Email'
+                  )}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
 
-      {/* Email Details Modal */}
+      {/* Email Details Modal - Fixed for mobile */}
       {showDetailsModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-xl max-w-md w-full">
-            <div className="p-5">
-              <div className="flex items-center justify-between mb-4">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-end lg:items-center justify-center z-50 p-0 lg:p-4">
+          <div className="bg-white rounded-t-xl lg:rounded-xl shadow-xl w-full max-w-md max-h-[85vh] overflow-y-auto">
+            <div className="p-5 sticky top-0 bg-white border-b border-gray-100 z-10">
+              <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-2">
                   <div className="p-1.5 bg-purple-50 rounded-lg">
                     <Mail className="w-4 h-4 text-purple-600" />
@@ -525,70 +524,70 @@ const CustomEmails = () => {
                   <X className="w-5 h-5" />
                 </button>
               </div>
+            </div>
 
-              <div className="space-y-4">
-                <div className="flex items-center space-x-3">
-                  {showDetailsModal.profilePicture?.url ? (
-                    <img
-                      src={showDetailsModal.profilePicture.url}
-                      alt={showDetailsModal.displayName}
-                      className="w-12 h-12 rounded-full object-cover"
-                    />
-                  ) : (
-                    <div className="w-12 h-12 bg-purple-50 rounded-full flex items-center justify-center">
-                      <User className="w-6 h-6 text-purple-600" />
-                    </div>
-                  )}
-                  <div>
-                    <p className="font-medium text-gray-800">{showDetailsModal.displayName || showDetailsModal.username}</p>
-                    <p className="text-sm text-gray-500">{showDetailsModal.email}</p>
+            <div className="p-5 space-y-4 pb-8">
+              <div className="flex items-center space-x-3">
+                {showDetailsModal.profilePicture?.url ? (
+                  <img
+                    src={showDetailsModal.profilePicture.url}
+                    alt={showDetailsModal.displayName}
+                    className="w-12 h-12 rounded-full object-cover"
+                  />
+                ) : (
+                  <div className="w-12 h-12 bg-purple-50 rounded-full flex items-center justify-center">
+                    <User className="w-6 h-6 text-purple-600" />
                   </div>
+                )}
+                <div>
+                  <p className="font-medium text-gray-800">{showDetailsModal.displayName || showDetailsModal.username}</p>
+                  <p className="text-sm text-gray-500">{showDetailsModal.email}</p>
                 </div>
-
-                <div className="space-y-2">
-                  <div className="flex justify-between py-2 border-b border-gray-100">
-                    <span className="text-sm text-gray-500">Forward To:</span>
-                    <span className="text-sm text-gray-700">{showDetailsModal.forwardToEmail}</span>
-                  </div>
-                  <div className="flex justify-between py-2 border-b border-gray-100">
-                    <span className="text-sm text-gray-500">Domain:</span>
-                    <span className="text-sm text-gray-700">{showDetailsModal.domain}</span>
-                  </div>
-                  <div className="flex justify-between py-2 border-b border-gray-100">
-                    <span className="text-sm text-gray-500">Created:</span>
-                    <span className="text-sm text-gray-700">
-                      {format(new Date(showDetailsModal.createdAt), 'MMM d, yyyy')}
-                    </span>
-                  </div>
-                  <div className="flex justify-between py-2 border-b border-gray-100">
-                    <span className="text-sm text-gray-500">Default:</span>
-                    <span className="text-sm">
-                      {showDetailsModal.isDefault ? (
-                        <CheckCircle className="w-4 h-4 text-green-500" />
-                      ) : (
-                        <X className="w-4 h-4 text-gray-400" />
-                      )}
-                    </span>
-                  </div>
-                  {showDetailsModal.signature && (
-                    <div className="py-2">
-                      <p className="text-sm text-gray-500 mb-1">Signature:</p>
-                      <p className="text-sm text-gray-700 whitespace-pre-wrap">{showDetailsModal.signature}</p>
-                    </div>
-                  )}
-                </div>
-
-                <button
-                  onClick={() => {
-                    copyToClipboard(showDetailsModal.email, showDetailsModal._id);
-                    setShowDetailsModal(null);
-                  }}
-                  className="w-full flex items-center justify-center space-x-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition"
-                >
-                  <Copy className="w-4 h-4" />
-                  <span>Copy Email Address</span>
-                </button>
               </div>
+
+              <div className="space-y-2">
+                <div className="flex justify-between py-2 border-b border-gray-100">
+                  <span className="text-sm text-gray-500">Forward To:</span>
+                  <span className="text-sm text-gray-700">{showDetailsModal.forwardToEmail}</span>
+                </div>
+                <div className="flex justify-between py-2 border-b border-gray-100">
+                  <span className="text-sm text-gray-500">Domain:</span>
+                  <span className="text-sm text-gray-700">{showDetailsModal.domain}</span>
+                </div>
+                <div className="flex justify-between py-2 border-b border-gray-100">
+                  <span className="text-sm text-gray-500">Created:</span>
+                  <span className="text-sm text-gray-700">
+                    {format(new Date(showDetailsModal.createdAt), 'MMM d, yyyy')}
+                  </span>
+                </div>
+                <div className="flex justify-between py-2 border-b border-gray-100">
+                  <span className="text-sm text-gray-500">Default:</span>
+                  <span className="text-sm">
+                    {showDetailsModal.isDefault ? (
+                      <CheckCircle className="w-4 h-4 text-green-500" />
+                    ) : (
+                      <X className="w-4 h-4 text-gray-400" />
+                    )}
+                  </span>
+                </div>
+                {showDetailsModal.signature && (
+                  <div className="py-2">
+                    <p className="text-sm text-gray-500 mb-1">Signature:</p>
+                    <p className="text-sm text-gray-700 whitespace-pre-wrap">{showDetailsModal.signature}</p>
+                  </div>
+                )}
+              </div>
+
+              <button
+                onClick={() => {
+                  copyToClipboard(showDetailsModal.email, showDetailsModal._id);
+                  setShowDetailsModal(null);
+                }}
+                className="w-full flex items-center justify-center space-x-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition"
+              >
+                <Copy className="w-4 h-4" />
+                <span>Copy Email Address</span>
+              </button>
             </div>
           </div>
         </div>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 import { useSendEmailMutation, useGetCustomEmailsQuery } from '../slices/emailApiSlice';
@@ -69,14 +69,44 @@ const Compose = () => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const handleChange = (e) => {
-    setEmailData({
-      ...emailData,
+  const handleChange = useCallback((e) => {
+    setEmailData(prev => ({
+      ...prev,
       [e.target.name]: e.target.value
-    });
+    }));
     setError('');
     setSuccess('');
-  };
+  }, []);
+
+  const handleToChange = useCallback((e) => {
+    setEmailData(prev => ({ ...prev, to: e.target.value }));
+    setError('');
+    setSuccess('');
+  }, []);
+
+  const handleSubjectChange = useCallback((e) => {
+    setEmailData(prev => ({ ...prev, subject: e.target.value }));
+    setError('');
+    setSuccess('');
+  }, []);
+
+  const handleContentChange = useCallback((e) => {
+    setEmailData(prev => ({ ...prev, content: e.target.value }));
+    setError('');
+    setSuccess('');
+  }, []);
+
+  const handleCcChange = useCallback((e) => {
+    setEmailData(prev => ({ ...prev, cc: e.target.value }));
+    setError('');
+    setSuccess('');
+  }, []);
+
+  const handleBccChange = useCallback((e) => {
+    setEmailData(prev => ({ ...prev, bcc: e.target.value }));
+    setError('');
+    setSuccess('');
+  }, []);
 
   const handleFileSelect = (e) => {
     const files = Array.from(e.target.files);
@@ -87,16 +117,18 @@ const Compose = () => {
       type: file.type,
       preview: file.type.startsWith('image/') ? URL.createObjectURL(file) : null
     }));
-    setAttachments([...attachments, ...newAttachments]);
+    setAttachments(prev => [...prev, ...newAttachments]);
   };
 
   const removeAttachment = (index) => {
-    const newAttachments = [...attachments];
-    if (newAttachments[index].preview) {
-      URL.revokeObjectURL(newAttachments[index].preview);
-    }
-    newAttachments.splice(index, 1);
-    setAttachments(newAttachments);
+    setAttachments(prev => {
+      const newAttachments = [...prev];
+      if (newAttachments[index].preview) {
+        URL.revokeObjectURL(newAttachments[index].preview);
+      }
+      newAttachments.splice(index, 1);
+      return newAttachments;
+    });
   };
 
   const handleSubmit = async (e) => {
@@ -153,6 +185,11 @@ const Compose = () => {
     }
   };
 
+  const selectCustomEmail = useCallback((emailId) => {
+    setEmailData(prev => ({ ...prev, customEmailId: emailId }));
+    setShowDropdown(false);
+  }, []);
+
   const formatFileSize = (bytes) => {
     if (bytes === 0) return '0 Bytes';
     const k = 1024;
@@ -170,7 +207,7 @@ const Compose = () => {
     const selectedText = emailData.content.substring(start, end);
     const newText = emailData.content.substring(0, start) + before + selectedText + after + emailData.content.substring(end);
     
-    setEmailData({ ...emailData, content: newText });
+    setEmailData(prev => ({ ...prev, content: newText }));
     
     setTimeout(() => {
       textarea.focus();
@@ -245,10 +282,7 @@ const Compose = () => {
                   <button
                     key={email._id}
                     type="button"
-                    onClick={() => {
-                      setEmailData(prev => ({ ...prev, customEmailId: email._id }));
-                      setShowDropdown(false);
-                    }}
+                    onClick={() => selectCustomEmail(email._id)}
                     className={`w-full flex items-center space-x-2 px-3 py-2 text-sm hover:bg-gray-50 transition ${
                       emailData.customEmailId === email._id ? 'bg-purple-50' : ''
                     }`}
@@ -279,7 +313,7 @@ const Compose = () => {
               type="text"
               name="to"
               value={emailData.to}
-              onChange={handleChange}
+              onChange={handleToChange}
               placeholder="recipient@example.com"
               className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-purple-400 focus:border-transparent outline-none"
               required
@@ -299,7 +333,7 @@ const Compose = () => {
               type="text"
               name="cc"
               value={emailData.cc}
-              onChange={handleChange}
+              onChange={handleCcChange}
               placeholder="Cc: recipient@example.com"
               className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-purple-400 focus:border-transparent outline-none"
             />
@@ -310,7 +344,7 @@ const Compose = () => {
               type="text"
               name="bcc"
               value={emailData.bcc}
-              onChange={handleChange}
+              onChange={handleBccChange}
               placeholder="Bcc: recipient@example.com"
               className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-purple-400 focus:border-transparent outline-none"
             />
@@ -321,7 +355,7 @@ const Compose = () => {
             type="text"
             name="subject"
             value={emailData.subject}
-            onChange={handleChange}
+            onChange={handleSubjectChange}
             placeholder="Subject"
             className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-purple-400 focus:border-transparent outline-none"
             required
@@ -352,7 +386,7 @@ const Compose = () => {
             ref={contentRef}
             name="content"
             value={emailData.content}
-            onChange={handleChange}
+            onChange={handleContentChange}
             placeholder="Write your message..."
             className="w-full min-h-[200px] px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-400 focus:border-transparent outline-none text-sm"
             required
@@ -479,10 +513,7 @@ const Compose = () => {
                     <button
                       key={email._id}
                       type="button"
-                      onClick={() => {
-                        setEmailData(prev => ({ ...prev, customEmailId: email._id }));
-                        setShowDropdown(false);
-                      }}
+                      onClick={() => selectCustomEmail(email._id)}
                       className={`w-full flex items-center space-x-3 px-3 py-2 hover:bg-gray-50 transition text-sm ${
                         emailData.customEmailId === email._id ? 'bg-purple-50' : ''
                       }`}
@@ -513,7 +544,7 @@ const Compose = () => {
                 type="text"
                 name="to"
                 value={emailData.to}
-                onChange={handleChange}
+                onChange={handleToChange}
                 placeholder="recipient@example.com"
                 className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-400 focus:border-transparent outline-none text-sm"
                 required
@@ -533,7 +564,7 @@ const Compose = () => {
                 type="text"
                 name="cc"
                 value={emailData.cc}
-                onChange={handleChange}
+                onChange={handleCcChange}
                 placeholder="Cc: recipient@example.com"
                 className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-400 focus:border-transparent outline-none text-sm"
               />
@@ -544,7 +575,7 @@ const Compose = () => {
                 type="text"
                 name="bcc"
                 value={emailData.bcc}
-                onChange={handleChange}
+                onChange={handleBccChange}
                 placeholder="Bcc: recipient@example.com"
                 className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-400 focus:border-transparent outline-none text-sm"
               />
@@ -557,7 +588,7 @@ const Compose = () => {
                 type="text"
                 name="subject"
                 value={emailData.subject}
-                onChange={handleChange}
+                onChange={handleSubjectChange}
                 placeholder="Enter subject"
                 className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-400 focus:border-transparent outline-none text-sm"
                 required
@@ -589,7 +620,7 @@ const Compose = () => {
               ref={contentRef}
               name="content"
               value={emailData.content}
-              onChange={handleChange}
+              onChange={handleContentChange}
               placeholder="Write your message here..."
               className="w-full h-64 px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-400 focus:border-transparent outline-none resize-none font-mono text-sm"
               required
