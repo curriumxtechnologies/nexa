@@ -80,7 +80,8 @@ const emailSchema = new mongoose.Schema({
   },
   content: {
     type: String,
-    required: true
+    required: false,
+    default: ''
   },
   contentType: {
     type: String,
@@ -91,11 +92,11 @@ const emailSchema = new mongoose.Schema({
   attachments: [{
     filename: {
       type: String,
-      required: true
+      default: 'attachment'
     },
     originalName: {
       type: String,
-      required: true
+      default: 'attachment'
     },
     url: {
       type: String,
@@ -103,15 +104,15 @@ const emailSchema = new mongoose.Schema({
     },
     publicId: {
       type: String,
-      required: true
+      default: null
     },
     fileSize: {
       type: Number,
-      required: true
+      default: 0
     },
     mimeType: {
       type: String,
-      required: true
+      default: 'application/octet-stream'
     },
     cid: {
       type: String,
@@ -130,6 +131,12 @@ const emailSchema = new mongoose.Schema({
   replyToEmail: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Email',
+    default: null
+  },
+  // Who sent it (for team access)
+  sentBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
     default: null
   },
   // Status and metadata
@@ -202,7 +209,6 @@ emailSchema.index({ userId: 1, isStarred: 1 });
 emailSchema.index({ userId: 1, isArchived: 1 });
 emailSchema.index({ userId: 1, isTrashed: 1 });
 emailSchema.index({ userId: 1, status: 1 });
-emailSchema.index({ emailId: 1 });
 emailSchema.index({ 'from.email': 1 });
 emailSchema.index({ 'to.email': 1 });
 emailSchema.index({ replyToEmailId: 1 });
