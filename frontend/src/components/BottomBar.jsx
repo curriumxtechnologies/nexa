@@ -15,7 +15,8 @@ import {
   Trash2,
   BarChart3,
   Globe,
-  ChevronRight
+  ChevronRight,
+  AtSign
 } from 'lucide-react';
 
 const BottomBar = () => {
@@ -35,6 +36,7 @@ const BottomBar = () => {
   const moreNavItems = [
     { id: 'archive', label: 'Archive', icon: Archive, path: '/archive' },
     { id: 'trash', label: 'Trash', icon: Trash2, path: '/trash' },
+    { id: 'custom-emails', label: 'Custom Emails', icon: AtSign, path: '/custom-emails' },
     { id: 'domains', label: 'Domains', icon: Globe, path: '/domains' },
     { id: 'team', label: 'Team Access', icon: Users, path: '/team' },
     { id: 'stats', label: 'Statistics', icon: BarChart3, path: '/stats' },
@@ -98,7 +100,7 @@ const BottomBar = () => {
           <div className="flex-1 overflow-y-auto py-4">
             <div className="px-2 space-y-1">
               <p className="px-3 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider">
-                More Options
+                Email Management
               </p>
               {moreNavItems.map((item) => {
                 const Icon = item.icon;
