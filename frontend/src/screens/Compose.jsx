@@ -27,7 +27,7 @@ const Compose = () => {
   const [showDropdown, setShowDropdown] = useState(false);
   
   const [sendEmail, { isLoading }] = useSendEmailMutation();
-  const { data: customEmailsData } = useGetCustomEmailsQuery();
+  const { data: customEmailsData, refetch: refetchCustomEmails } = useGetCustomEmailsQuery();
   
   const customEmails = customEmailsData?.data?.emails || [];
   const defaultEmail = customEmails.find(e => e.isDefault) || customEmails[0];
@@ -50,15 +50,21 @@ const Compose = () => {
   const fileInputRef = useRef(null);
   const contentRef = useRef(null);
   const dropdownRef = useRef(null);
+  const toInputRef = useRef(null);
+  const subjectInputRef = useRef(null);
+  const ccInputRef = useRef(null);
+  const bccInputRef = useRef(null);
 
   const selectedEmail = customEmails.find(e => e._id === emailData.customEmailId);
 
+  // Set default email when data loads
   useEffect(() => {
     if (defaultEmail && !emailData.customEmailId) {
       setEmailData(prev => ({ ...prev, customEmailId: defaultEmail._id }));
     }
-  }, [defaultEmail]);
+  }, [defaultEmail, emailData.customEmailId]);
 
+  // Handle click outside dropdown
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
@@ -69,43 +75,30 @@ const Compose = () => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const handleChange = useCallback((e) => {
-    setEmailData(prev => ({
-      ...prev,
-      [e.target.name]: e.target.value
-    }));
-    setError('');
-    setSuccess('');
-  }, []);
-
+  // Separate handlers for each input to prevent re-renders
   const handleToChange = useCallback((e) => {
     setEmailData(prev => ({ ...prev, to: e.target.value }));
     setError('');
-    setSuccess('');
   }, []);
 
   const handleSubjectChange = useCallback((e) => {
     setEmailData(prev => ({ ...prev, subject: e.target.value }));
     setError('');
-    setSuccess('');
   }, []);
 
   const handleContentChange = useCallback((e) => {
     setEmailData(prev => ({ ...prev, content: e.target.value }));
     setError('');
-    setSuccess('');
   }, []);
 
   const handleCcChange = useCallback((e) => {
     setEmailData(prev => ({ ...prev, cc: e.target.value }));
     setError('');
-    setSuccess('');
   }, []);
 
   const handleBccChange = useCallback((e) => {
     setEmailData(prev => ({ ...prev, bcc: e.target.value }));
     setError('');
-    setSuccess('');
   }, []);
 
   const handleFileSelect = (e) => {
@@ -311,7 +304,7 @@ const Compose = () => {
             <label className="text-xs font-medium text-gray-500 mb-1 block">To</label>
             <input
               type="text"
-              name="to"
+              ref={toInputRef}
               value={emailData.to}
               onChange={handleToChange}
               placeholder="recipient@example.com"
@@ -331,7 +324,7 @@ const Compose = () => {
           {showCc && (
             <input
               type="text"
-              name="cc"
+              ref={ccInputRef}
               value={emailData.cc}
               onChange={handleCcChange}
               placeholder="Cc: recipient@example.com"
@@ -342,7 +335,7 @@ const Compose = () => {
           {showBcc && (
             <input
               type="text"
-              name="bcc"
+              ref={bccInputRef}
               value={emailData.bcc}
               onChange={handleBccChange}
               placeholder="Bcc: recipient@example.com"
@@ -353,7 +346,7 @@ const Compose = () => {
           {/* Subject */}
           <input
             type="text"
-            name="subject"
+            ref={subjectInputRef}
             value={emailData.subject}
             onChange={handleSubjectChange}
             placeholder="Subject"
@@ -384,7 +377,6 @@ const Compose = () => {
           {/* Content */}
           <textarea
             ref={contentRef}
-            name="content"
             value={emailData.content}
             onChange={handleContentChange}
             placeholder="Write your message..."
@@ -542,7 +534,6 @@ const Compose = () => {
               <label className="block text-xs font-medium text-gray-500 mb-1">To</label>
               <input
                 type="text"
-                name="to"
                 value={emailData.to}
                 onChange={handleToChange}
                 placeholder="recipient@example.com"
@@ -562,7 +553,6 @@ const Compose = () => {
             {showCc && (
               <input
                 type="text"
-                name="cc"
                 value={emailData.cc}
                 onChange={handleCcChange}
                 placeholder="Cc: recipient@example.com"
@@ -573,7 +563,6 @@ const Compose = () => {
             {showBcc && (
               <input
                 type="text"
-                name="bcc"
                 value={emailData.bcc}
                 onChange={handleBccChange}
                 placeholder="Bcc: recipient@example.com"
@@ -586,7 +575,6 @@ const Compose = () => {
               <label className="block text-xs font-medium text-gray-500 mb-1">Subject</label>
               <input
                 type="text"
-                name="subject"
                 value={emailData.subject}
                 onChange={handleSubjectChange}
                 placeholder="Enter subject"
@@ -618,7 +606,6 @@ const Compose = () => {
             {/* Content */}
             <textarea
               ref={contentRef}
-              name="content"
               value={emailData.content}
               onChange={handleContentChange}
               placeholder="Write your message here..."
