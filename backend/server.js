@@ -23,6 +23,7 @@ const MONGO_URL = process.env.MONGO_URL;
 app.use(cors({
     origin: [
         'http://localhost:5173',
+        'https://nexa.curriumx.online',
     ],
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH','OPTIONS'],
