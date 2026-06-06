@@ -12,13 +12,27 @@ webpush.setVapidDetails(
 
 // Configure Firebase (for mobile)
 if (process.env.FIREBASE_PRIVATE_KEY) {
-  admin.initializeApp({
-    credential: admin.credential.cert({
-      projectId: process.env.FIREBASE_PROJECT_ID,
-      privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'),
-      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-    }),
-  });
+  try {
+    let privateKey = process.env.FIREBASE_PRIVATE_KEY;
+    
+    // Handle all possible formats
+    privateKey = privateKey
+      .replace(/\\n/g, '\n')  // escaped newlines
+      .replace(/^"|"$/g, '')  // remove wrapping quotes if any
+      .trim();
+
+    admin.initializeApp({
+      credential: admin.credential.cert({
+        projectId: process.env.FIREBASE_PROJECT_ID,
+        privateKey,
+        clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+      }),
+    });
+    console.log('✅ Firebase initialized successfully');
+  } catch (error) {
+    // Don't crash server if Firebase fails
+    console.error('❌ Firebase initialization failed:', error.message);
+  }
 }
 
 // Get notification preferences
