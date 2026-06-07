@@ -454,10 +454,10 @@ const Domains = () => {
                   <p className="text-xs font-medium text-gray-700 mb-2">Step 1: Copy Webhook URL</p>
                   <div className="flex items-center justify-between bg-white border border-gray-200 rounded-lg p-2">
                     <code className="text-xs text-gray-600 truncate">
-                      {`${window.location.origin}/api/email/webhook/receive`}
+                      {`https://nexa-api.curriumx.online/api/email/webhook/receive`}
                     </code>
                     <button
-                      onClick={() => copyWebhookUrl(`${window.location.origin}/api/email/webhook/receive`)}
+                      onClick={() => copyWebhookUrl(`https://nexa-api.curriumx.online/api/email/webhook/receive`)}
                       className="text-gray-400 hover:text-purple-600 ml-2 flex-shrink-0"
                     >
                       {copiedUrl ? (
