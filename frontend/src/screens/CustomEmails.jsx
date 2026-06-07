@@ -1,487 +1,599 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { useSelector } from 'react-redux';
-import { useNavigate } from 'react-router-dom';
-import { useSendEmailMutation, useGetCustomEmailsQuery } from '../slices/emailApiSlice';
-import ReactQuill from 'react-quill-new';
-import 'react-quill-new/dist/quill.snow.css';
-import {
-  Send, Paperclip, X, Minimize2, Maximize2,
-  Loader2, AlertCircle, CheckCircle, ChevronDown,
+import React, { useState } from 'react';
+import { useGetCustomEmailsQuery, useCreateCustomEmailMutation } from '../slices/emailApiSlice';
+import { 
+  Mail, 
+  Plus, 
+  Trash2, 
+  Star,
+  Loader2,
+  AlertCircle,
+  CheckCircle,
+  X,
+  Copy,
+  Check,
+  ExternalLink,
+  User,
+  AtSign,
+  Camera,
+  ChevronRight,
+  Settings,
+  Eye
 } from 'lucide-react';
+import { format } from 'date-fns';
 
-const QUILL_MODULES = {
-  toolbar: [
-    ['bold', 'italic', 'underline'],
-    [{ list: 'ordered' }, { list: 'bullet' }],
-    [{ align: [] }],
-    ['link'],
-    ['clean'],
-  ],
-};
-
-const QUILL_FORMATS = [
-  'bold', 'italic', 'underline',
-  'list',
-  'align',
-  'link',
-];
-
-const Compose = () => {
-  const navigate = useNavigate();
-  const [isFullscreen, setIsFullscreen] = useState(false);
-  const [isMinimized, setIsMinimized] = useState(false);
-  const [showDropdown, setShowDropdown] = useState(false);
-
-  const [sendEmail, { isLoading }] = useSendEmailMutation();
-  const { data: customEmailsData } = useGetCustomEmailsQuery();
-
-  const customEmails = customEmailsData?.data?.emails || [];
-  const defaultEmail = customEmails.find((e) => e.isDefault) || customEmails[0];
-
-  const [emailData, setEmailData] = useState({
-    to: '', cc: '', bcc: '', subject: '', customEmailId: '',
-  });
-  const [content, setContent] = useState('');
-  const [attachments, setAttachments] = useState([]);
+const CustomEmails = () => {
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showDetailsModal, setShowDetailsModal] = useState(null);
+  const [username, setUsername] = useState('');
+  const [forwardToEmail, setForwardToEmail] = useState('');
+  const [isDefault, setIsDefault] = useState(false);
+  const [displayName, setDisplayName] = useState('');
+  const [signature, setSignature] = useState('');
+  const [profilePicture, setProfilePicture] = useState(null);
+  const [profilePreview, setProfilePreview] = useState(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
-  const [showCc, setShowCc] = useState(false);
-  const [showBcc, setShowBcc] = useState(false);
+  const [copiedId, setCopiedId] = useState(null);
+  const [selectedResendConfigId, setSelectedResendConfigId] = useState('');
 
-  const fileInputRef = useRef(null);
-  const dropdownRef = useRef(null);
+  const { data, isLoading, refetch } = useGetCustomEmailsQuery();
+  const [createCustomEmail] = useCreateCustomEmailMutation();
 
-  const selectedEmail = customEmails.find((e) => e._id === emailData.customEmailId);
+  const domains = data?.data?.domains || [];
+  const customEmails = data?.data?.emails || [];
 
-  useEffect(() => {
-    if (defaultEmail && !emailData.customEmailId) {
-      setEmailData((prev) => ({ ...prev, customEmailId: defaultEmail._id }));
-    }
-  }, [defaultEmail]);
-
-  useEffect(() => {
-    const handleClickOutside = (e) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
-        setShowDropdown(false);
+  const handleFileChange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      if (file.size > 5 * 1024 * 1024) {
+        setError('Profile picture must be less than 5MB');
+        return;
       }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
-  const handleFileSelect = (e) => {
-    const files = Array.from(e.target.files);
-    setAttachments((prev) => [
-      ...prev,
-      ...files.map((file) => ({
-        file, name: file.name, size: file.size, type: file.type,
-        preview: file.type.startsWith('image/') ? URL.createObjectURL(file) : null,
-      })),
-    ]);
-  };
-
-  const removeAttachment = (index) => {
-    setAttachments((prev) => {
-      const updated = [...prev];
-      if (updated[index].preview) URL.revokeObjectURL(updated[index].preview);
-      updated.splice(index, 1);
-      return updated;
-    });
+      
+      const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
+      if (!allowedTypes.includes(file.type)) {
+        setError('Only image files are allowed (JPEG, PNG, GIF, WEBP)');
+        return;
+      }
+      
+      setProfilePicture(file);
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setProfilePreview(reader.result);
+      };
+      reader.readAsDataURL(file);
+    }
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError(''); setSuccess('');
+    setError('');
+    setSuccess('');
+    setIsSubmitting(true);
 
-    const plainText = content.replace(/<[^>]*>/g, '').trim();
-    if (!emailData.to) return setError('Please enter at least one recipient');
-    if (!emailData.subject) return setError('Please enter a subject');
-    if (!plainText) return setError('Please enter email content');
+    if (!selectedResendConfigId) {
+      setError('Please select a domain');
+      setIsSubmitting(false);
+      return;
+    }
+
+    if (!username) {
+      setError('Please enter a username');
+      setIsSubmitting(false);
+      return;
+    }
+
+    if (!forwardToEmail) {
+      setError('Please enter a forward email address');
+      setIsSubmitting(false);
+      return;
+    }
 
     try {
       const formData = new FormData();
-      formData.append('to', emailData.to.split(',').map((s) => s.trim()));
-      if (emailData.cc) formData.append('cc', emailData.cc.split(',').map((s) => s.trim()));
-      if (emailData.bcc) formData.append('bcc', emailData.bcc.split(',').map((s) => s.trim()));
-      formData.append('subject', emailData.subject);
-      formData.append('html', content);
-      formData.append('customEmailId', emailData.customEmailId);
-      attachments.forEach((att) => formData.append('attachments', att.file));
+      formData.append('username', username);
+      formData.append('forwardToEmail', forwardToEmail);
+      formData.append('resendConfigId', selectedResendConfigId);
+      if (isDefault) formData.append('isDefault', true);
+      if (displayName) formData.append('displayName', displayName);
+      if (signature) formData.append('signature', signature);
+      if (profilePicture) formData.append('profilePicture', profilePicture);
 
-      await sendEmail(formData).unwrap();
-      setSuccess('Email sent successfully!');
-      setTimeout(() => navigate('/sent'), 2000);
+      await createCustomEmail(formData).unwrap();
+      
+      setUsername('');
+      setForwardToEmail('');
+      setIsDefault(false);
+      setDisplayName('');
+      setSignature('');
+      setProfilePicture(null);
+      setProfilePreview(null);
+      setSelectedResendConfigId('');
+      setShowCreateModal(false);
+      
+      refetch();
     } catch (err) {
-      setError(err.data?.message || 'Failed to send email');
+      setError(err.data?.message || 'Failed to create custom email');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
-  const handleDiscard = () => {
-    const plainText = content.replace(/<[^>]*>/g, '').trim();
-    if (emailData.to || emailData.subject || plainText || attachments.length > 0) {
-      if (window.confirm('Discard this email?')) navigate(-1);
-    } else {
-      navigate(-1);
-    }
+  const copyToClipboard = (text, id) => {
+    navigator.clipboard.writeText(text);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 2000);
   };
 
-  const selectCustomEmail = (id) => {
-    setEmailData((prev) => ({ ...prev, customEmailId: id }));
-    setShowDropdown(false);
-  };
-
-  const formatFileSize = (bytes) => {
-    if (!bytes) return '0 Bytes';
-    const k = 1024, sizes = ['Bytes', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-  };
-
-  // ── Shared pieces ─────────────────────────────────────────────────────────
-
-  const FromDropdown = () => (
-    <div className="relative" ref={dropdownRef}>
-      <label className="text-xs font-medium text-gray-500 mb-1 block">From</label>
-      <button
-        type="button"
-        onClick={() => setShowDropdown((v) => !v)}
-        className="w-full flex items-center justify-between px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg hover:border-purple-300 transition text-sm"
-      >
-        <div className="flex items-center space-x-2 min-w-0">
-          {selectedEmail?.profilePicture?.url ? (
-            <img src={selectedEmail.profilePicture.url} className="w-6 h-6 rounded-full flex-shrink-0" alt="" />
-          ) : (
-            <div className="w-6 h-6 bg-purple-100 rounded-full flex items-center justify-center flex-shrink-0">
-              <span className="text-xs text-purple-600 font-medium">
-                {(selectedEmail?.displayName?.[0] || selectedEmail?.username?.[0] || 'U').toUpperCase()}
-              </span>
-            </div>
-          )}
-          <div className="text-left min-w-0">
-            <p className="text-gray-800 text-sm font-medium truncate">
-              {selectedEmail?.displayName || selectedEmail?.username}
-            </p>
-            <p className="text-gray-400 text-xs truncate">{selectedEmail?.email}</p>
-          </div>
-        </div>
-        <ChevronDown className={`w-4 h-4 text-gray-400 flex-shrink-0 transition-transform ${showDropdown ? 'rotate-180' : ''}`} />
-      </button>
-
-      {showDropdown && (
-        <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-30 max-h-60 overflow-y-auto">
-          {customEmails.map((email) => (
-            <button
-              key={email._id}
-              type="button"
-              onMouseDown={(e) => { e.preventDefault(); selectCustomEmail(email._id); }}
-              className={`w-full flex items-center space-x-3 px-3 py-2 hover:bg-gray-50 transition text-sm ${emailData.customEmailId === email._id ? 'bg-purple-50' : ''}`}
-            >
-              {email.profilePicture?.url ? (
-                <img src={email.profilePicture.url} className="w-7 h-7 rounded-full flex-shrink-0" alt="" />
-              ) : (
-                <div className="w-7 h-7 bg-purple-100 rounded-full flex items-center justify-center flex-shrink-0">
-                  <span className="text-xs text-purple-600 font-medium">
-                    {(email.displayName?.[0] || email.username?.[0] || 'U').toUpperCase()}
-                  </span>
-                </div>
-              )}
-              <div className="flex-1 text-left min-w-0">
-                <p className="text-gray-800 font-medium truncate">{email.displayName || email.username}</p>
-                <p className="text-gray-400 text-xs truncate">{email.email}</p>
-              </div>
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-
-  const Editor = ({ height = '220px' }) => (
-    <div>
-      <style>{`
-        .ql-toolbar.ql-snow {
-          border: 1px solid #e5e7eb;
-          border-bottom: none;
-          border-radius: 8px 8px 0 0;
-          background: #f9fafb;
-        }
-        .ql-container.ql-snow {
-          border: 1px solid #e5e7eb;
-          border-radius: 0 0 8px 8px;
-          font-size: 14px;
-          font-family: inherit;
-        }
-        .ql-editor {
-          min-height: ${height};
-          padding: 12px;
-          line-height: 1.6;
-        }
-        .ql-editor.ql-blank::before {
-          color: #9ca3af;
-          font-style: normal;
-        }
-        .ql-editor a { color: #7c3aed; }
-        .ql-snow .ql-picker { color: #374151; }
-        .ql-snow .ql-stroke { stroke: #374151; }
-        .ql-snow .ql-fill { fill: #374151; }
-        .ql-snow.ql-toolbar button:hover .ql-stroke,
-        .ql-snow.ql-toolbar button.ql-active .ql-stroke { stroke: #7c3aed; }
-        .ql-snow.ql-toolbar button:hover .ql-fill,
-        .ql-snow.ql-toolbar button.ql-active .ql-fill { fill: #7c3aed; }
-        .ql-snow.ql-toolbar button.ql-active { color: #7c3aed; }
-      `}</style>
-      <ReactQuill
-        theme="snow"
-        value={content}
-        onChange={setContent}
-        modules={QUILL_MODULES}
-        formats={QUILL_FORMATS}
-        placeholder="Write your message here..."
-      />
-    </div>
-  );
-
-  const AttachmentList = () =>
-    attachments.length > 0 ? (
-      <div className="space-y-2">
-        <p className="text-xs font-medium text-gray-500">Attachments</p>
-        <div className="flex flex-wrap gap-2">
-          {attachments.map((att, i) => (
-            <div key={i} className="flex items-center space-x-2 bg-gray-100 rounded-lg px-2 py-1">
-              {att.preview
-                ? <img src={att.preview} alt={att.name} className="w-8 h-8 object-cover rounded" />
-                : <Paperclip className="w-4 h-4 text-gray-400" />}
-              <div className="min-w-0">
-                <p className="text-xs text-gray-700 max-w-[150px] truncate">{att.name}</p>
-                <p className="text-[10px] text-gray-400">{formatFileSize(att.size)}</p>
-              </div>
-              <button type="button" onClick={() => removeAttachment(i)} className="p-1 hover:bg-gray-200 rounded">
-                <X className="w-3 h-3 text-gray-400" />
-              </button>
-            </div>
-          ))}
-        </div>
-      </div>
-    ) : null;
-
-  const StatusMessages = () => (
-    <>
-      {error && (
-        <div className="flex items-center space-x-2 p-3 bg-red-50 rounded-lg">
-          <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0" />
-          <p className="text-sm text-red-600">{error}</p>
-        </div>
-      )}
-      {success && (
-        <div className="flex items-center space-x-2 p-3 bg-green-50 rounded-lg">
-          <CheckCircle className="w-4 h-4 text-green-500 flex-shrink-0" />
-          <p className="text-sm text-green-600">{success}</p>
-        </div>
-      )}
-    </>
-  );
-
-  // ── Minimized ─────────────────────────────────────────────────────────────
-  if (isMinimized) {
+  if (isLoading) {
     return (
-      <div className="fixed bottom-4 right-4 bg-white rounded-lg shadow-lg border border-gray-200 w-72 z-50">
-        <div
-          className="flex items-center justify-between px-3 py-2 bg-purple-600 text-white rounded-t-lg cursor-pointer"
-          onClick={() => setIsMinimized(false)}
-        >
-          <div className="flex items-center space-x-2">
-            <Send className="w-4 h-4" />
-            <span className="text-xs font-medium">New Message</span>
-          </div>
-          <Maximize2 className="w-4 h-4" />
-        </div>
-        <div className="p-2">
-          <p className="text-xs text-gray-500 truncate">To: {emailData.to || '...'}</p>
-          <p className="text-xs text-gray-500 truncate">Subject: {emailData.subject || 'No subject'}</p>
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="text-center">
+          <Loader2 className="w-10 h-10 text-purple-600 animate-spin mx-auto mb-3" />
+          <p className="text-gray-500 text-sm">Loading custom emails...</p>
         </div>
       </div>
     );
   }
 
-  // ── MOBILE ────────────────────────────────────────────────────────────────
-  const mobileView = (
-    <div className="fixed inset-0 bg-white z-50 flex flex-col">
-      <div className="flex items-center justify-between px-4 py-3 bg-purple-600 text-white sticky top-0 z-10">
-        <div className="flex items-center space-x-2">
-          <Send className="w-5 h-5" />
-          <h2 className="text-base font-semibold">New Message</h2>
+  return (
+    <div className="min-h-screen bg-gray-50 pb-20 lg:pb-0">
+      {/* Header */}
+      <div className="bg-white border-b border-gray-100 sticky top-0 z-10">
+        <div className="px-4 py-4 lg:px-8">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-2">
+              <div className="p-1.5 bg-purple-50 rounded-lg">
+                <Mail className="w-5 h-5 text-purple-600" />
+              </div>
+              <div>
+                <h1 className="text-lg font-semibold text-gray-800">Custom Emails</h1>
+                <p className="text-xs text-gray-400 hidden lg:block">Manage your custom email addresses</p>
+              </div>
+            </div>
+            <button
+              onClick={() => setShowCreateModal(true)}
+              disabled={domains.length === 0}
+              className="flex items-center space-x-1.5 px-3 py-1.5 bg-purple-600 text-white text-sm rounded-lg hover:bg-purple-700 transition shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Create Email</span>
+            </button>
+          </div>
+          {domains.length === 0 && (
+            <div className="mt-2 p-2 bg-yellow-50 rounded-lg">
+              <p className="text-xs text-yellow-700 flex items-center space-x-1">
+                <AlertCircle className="w-3 h-3" />
+                <span>Please add and verify a domain first before creating custom emails.</span>
+              </p>
+            </div>
+          )}
         </div>
-        <button type="button" onClick={handleDiscard} className="p-1">
-          <X className="w-5 h-5" />
-        </button>
       </div>
 
-      <form onSubmit={handleSubmit} className="flex-1 flex flex-col overflow-hidden">
-        <div className="flex-1 overflow-y-auto p-4 space-y-4 pb-24">
-          <FromDropdown />
-
-          <div>
-            <label className="text-xs font-medium text-gray-500 mb-1 block">To</label>
-            <input
-              type="text" value={emailData.to}
-              onChange={(e) => { setEmailData((p) => ({ ...p, to: e.target.value })); setError(''); }}
-              placeholder="recipient@example.com"
-              className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-purple-400 outline-none"
-            />
-            <div className="flex space-x-3 mt-1">
-              <button type="button" onClick={() => setShowCc((v) => !v)} className="text-xs text-purple-600">
-                {showCc ? 'Hide CC' : 'Add CC'}
-              </button>
-              <button type="button" onClick={() => setShowBcc((v) => !v)} className="text-xs text-purple-600">
-                {showBcc ? 'Hide BCC' : 'Add BCC'}
-              </button>
+      {/* Content */}
+      <div className="px-4 py-4 lg:px-8">
+        {customEmails.length === 0 ? (
+          <div className="text-center py-16">
+            <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <Mail className="w-8 h-8 text-gray-400" />
             </div>
+            <p className="text-gray-500 font-medium">No custom emails created yet</p>
+            <p className="text-gray-400 text-sm mt-1">Create your first custom email address</p>
+            {domains.length > 0 && (
+              <button
+                onClick={() => setShowCreateModal(true)}
+                className="mt-4 px-4 py-2 bg-purple-600 text-white text-sm rounded-lg hover:bg-purple-700 transition"
+              >
+                Create Custom Email
+              </button>
+            )}
           </div>
+        ) : (
+          <div className="space-y-2">
+            {/* Desktop Table Header */}
+            <div className="hidden lg:grid lg:grid-cols-12 gap-4 px-4 py-2 text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <div className="col-span-4">Email Address</div>
+              <div className="col-span-3">Forward To</div>
+              <div className="col-span-3">Created</div>
+              <div className="col-span-2"></div>
+            </div>
 
-          {showCc && (
-            <input type="text" value={emailData.cc}
-              onChange={(e) => setEmailData((p) => ({ ...p, cc: e.target.value }))}
-              placeholder="Cc: recipient@example.com"
-              className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-purple-400 outline-none"
-            />
-          )}
-          {showBcc && (
-            <input type="text" value={emailData.bcc}
-              onChange={(e) => setEmailData((p) => ({ ...p, bcc: e.target.value }))}
-              placeholder="Bcc: recipient@example.com"
-              className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-purple-400 outline-none"
-            />
-          )}
+            {/* Email List Items */}
+            {customEmails.map((email) => (
+              <div
+                key={email._id}
+                className="bg-white border border-gray-100 rounded-lg lg:rounded-none lg:border-x-0 lg:border-t-0 hover:bg-gray-50/50 transition"
+              >
+                <div className="p-4 lg:grid lg:grid-cols-12 lg:gap-4 lg:items-center lg:p-3">
+                  {/* Email Info */}
+                  <div className="lg:col-span-4 mb-3 lg:mb-0">
+                    <div className="flex items-center space-x-3">
+                      {email.profilePicture?.url ? (
+                        <img
+                          src={email.profilePicture.url}
+                          alt={email.displayName}
+                          className="w-10 h-10 lg:w-8 lg:h-8 rounded-full object-cover"
+                        />
+                      ) : (
+                        <div className="w-10 h-10 lg:w-8 lg:h-8 bg-purple-50 rounded-full flex items-center justify-center flex-shrink-0">
+                          <User className="w-5 h-5 lg:w-4 lg:h-4 text-purple-600" />
+                        </div>
+                      )}
+                      <div>
+                        <div className="flex items-center space-x-2 flex-wrap gap-y-1">
+                          <p className="font-medium text-gray-800 text-sm lg:text-base">
+                            {email.displayName || email.username}
+                          </p>
+                          {email.isDefault && (
+                            <span className="px-1.5 py-0.5 text-[10px] bg-green-100 text-green-700 rounded-full">
+                              Default
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center space-x-1 mt-0.5">
+                          <p className="text-xs text-gray-500">{email.email}</p>
+                          <button
+                            onClick={() => copyToClipboard(email.email, email._id)}
+                            className="text-gray-400 hover:text-gray-600"
+                          >
+                            {copiedId === email._id ? (
+                              <Check className="w-3 h-3 text-green-500" />
+                            ) : (
+                              <Copy className="w-3 h-3" />
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
 
-          <input
-            type="text" value={emailData.subject}
-            onChange={(e) => { setEmailData((p) => ({ ...p, subject: e.target.value })); setError(''); }}
-            placeholder="Subject"
-            className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-purple-400 outline-none"
-          />
+                  {/* Forward To - Desktop */}
+                  <div className="hidden lg:block lg:col-span-3">
+                    <p className="text-sm text-gray-600 truncate">{email.forwardToEmail}</p>
+                  </div>
 
-          <Editor height="200px" />
-          <AttachmentList />
-          <StatusMessages />
-          <input type="file" ref={fileInputRef} onChange={handleFileSelect} multiple className="hidden" />
-        </div>
+                  {/* Created Date - Desktop */}
+                  <div className="hidden lg:block lg:col-span-3">
+                    <p className="text-xs text-gray-500">
+                      {format(new Date(email.createdAt), 'MMM d, yyyy')}
+                    </p>
+                  </div>
 
-        <div className="flex items-center justify-between px-4 py-3 bg-white border-t sticky bottom-0">
-          <button type="button" onClick={handleDiscard} className="px-3 py-2 text-sm text-red-600 hover:bg-red-50 rounded-lg">
-            Discard
-          </button>
-          <button type="submit" disabled={isLoading}
-            className="flex items-center space-x-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 text-sm">
-            {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-            <span>Send</span>
-          </button>
-        </div>
-      </form>
-    </div>
-  );
+                  {/* Actions */}
+                  <div className="lg:col-span-2 flex items-center justify-between lg:justify-end mt-3 lg:mt-0">
+                    <div className="flex items-center space-x-3">
+                      <button
+                        onClick={() => setShowDetailsModal(email)}
+                        className="text-gray-400 hover:text-purple-600 transition p-1"
+                        title="View Details"
+                      >
+                        <Eye className="w-4 h-4" />
+                      </button>
+                    </div>
+                    <ChevronRight className="w-4 h-4 text-gray-300 lg:hidden" />
+                  </div>
+                </div>
 
-  // ── DESKTOP ───────────────────────────────────────────────────────────────
-  const desktopView = (
-    <div className={`fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center ${isFullscreen ? 'p-0' : 'p-4'}`}>
-      <div className={`bg-white rounded-xl shadow-2xl flex flex-col ${isFullscreen ? 'w-full h-full rounded-none' : 'w-full max-w-3xl h-[85vh]'}`}>
-        <div className="flex items-center justify-between px-5 py-3 bg-purple-600 text-white rounded-t-xl">
-          <div className="flex items-center space-x-2">
-            <Send className="w-5 h-5" />
-            <h2 className="text-base font-semibold">New Message</h2>
+                {/* Mobile Extended Info */}
+                <div className="lg:hidden px-4 pb-4 pt-0 border-t border-gray-50 mt-2">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-gray-500">Forward to:</span>
+                    <span className="text-gray-600 truncate ml-2">{email.forwardToEmail}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-xs mt-1">
+                    <span className="text-gray-500">Created:</span>
+                    <span className="text-gray-600">
+                      {format(new Date(email.createdAt), 'MMM d, yyyy')}
+                    </span>
+                  </div>
+                  {email.signature && (
+                    <div className="mt-2 pt-2 border-t border-gray-50">
+                      <p className="text-xs text-gray-500 mb-1">Signature:</p>
+                      <p className="text-xs text-gray-600 line-clamp-2">{email.signature}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
           </div>
-          <div className="flex items-center space-x-1">
-            <button type="button" onClick={() => setIsMinimized(true)} className="p-1.5 hover:bg-purple-700 rounded" title="Minimize">
-              <Minimize2 className="w-4 h-4" />
-            </button>
-            <button type="button" onClick={() => setIsFullscreen((v) => !v)} className="p-1.5 hover:bg-purple-700 rounded" title="Fullscreen">
-              <Maximize2 className="w-4 h-4" />
-            </button>
-            <button type="button" onClick={handleDiscard} className="p-1.5 hover:bg-purple-700 rounded" title="Close">
-              <X className="w-5 h-5" />
-            </button>
-          </div>
-        </div>
+        )}
+      </div>
 
-        <form onSubmit={handleSubmit} className="flex-1 flex flex-col overflow-hidden">
-          <div className="flex-1 overflow-y-auto p-5 space-y-4">
-            <FromDropdown />
-
-            <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">To</label>
-              <input
-                type="text" value={emailData.to}
-                onChange={(e) => { setEmailData((p) => ({ ...p, to: e.target.value })); setError(''); }}
-                placeholder="recipient@example.com"
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-400 outline-none text-sm"
-              />
-              <div className="flex space-x-3 mt-1">
-                <button type="button" onClick={() => setShowCc((v) => !v)} className="text-xs text-purple-600">
-                  {showCc ? 'Hide CC' : 'Add CC'}
-                </button>
-                <button type="button" onClick={() => setShowBcc((v) => !v)} className="text-xs text-purple-600">
-                  {showBcc ? 'Hide BCC' : 'Add BCC'}
+      {/* Create Custom Email Modal - Fixed for mobile */}
+      {showCreateModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-end lg:items-center justify-center z-50 p-0 lg:p-4">
+          <div className="bg-white rounded-t-xl lg:rounded-xl shadow-xl w-full max-w-md max-h-[85vh] overflow-y-auto lg:max-h-[90vh]">
+            <div className="p-5 sticky top-0 bg-white border-b border-gray-100 z-10">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <div className="p-1.5 bg-purple-50 rounded-lg">
+                    <Plus className="w-4 h-4 text-purple-600" />
+                  </div>
+                  <h2 className="text-lg font-semibold text-gray-800">Create Custom Email</h2>
+                </div>
+                <button
+                  onClick={() => {
+                    setShowCreateModal(false);
+                    setError('');
+                    setUsername('');
+                    setForwardToEmail('');
+                    setIsDefault(false);
+                    setDisplayName('');
+                    setSignature('');
+                    setProfilePicture(null);
+                    setProfilePreview(null);
+                    setSelectedResendConfigId('');
+                  }}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <X className="w-5 h-5" />
                 </button>
               </div>
             </div>
 
-            {showCc && (
-              <input type="text" value={emailData.cc}
-                onChange={(e) => setEmailData((p) => ({ ...p, cc: e.target.value }))}
-                placeholder="Cc: recipient@example.com"
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-400 outline-none text-sm"
-              />
-            )}
-            {showBcc && (
-              <input type="text" value={emailData.bcc}
-                onChange={(e) => setEmailData((p) => ({ ...p, bcc: e.target.value }))}
-                placeholder="Bcc: recipient@example.com"
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-400 outline-none text-sm"
-              />
-            )}
+            <form onSubmit={handleSubmit} className="p-5 space-y-4 pb-8">
+              {error && (
+                <div className="p-3 bg-red-50 rounded-lg">
+                  <p className="text-sm text-red-600">{error}</p>
+                </div>
+              )}
 
-            <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">Subject</label>
-              <input
-                type="text" value={emailData.subject}
-                onChange={(e) => { setEmailData((p) => ({ ...p, subject: e.target.value })); setError(''); }}
-                placeholder="Enter subject"
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-400 outline-none text-sm"
-              />
+              {/* Profile Picture */}
+              <div className="flex justify-center">
+                <label className="cursor-pointer">
+                  <div className="relative">
+                    {profilePreview ? (
+                      <img
+                        src={profilePreview}
+                        alt="Profile preview"
+                        className="w-16 h-16 rounded-full object-cover border-2 border-purple-200"
+                      />
+                    ) : (
+                      <div className="w-16 h-16 bg-purple-50 rounded-full flex items-center justify-center border-2 border-purple-200">
+                        <Camera className="w-6 h-6 text-purple-600" />
+                      </div>
+                    )}
+                    <div className="absolute bottom-0 right-0 bg-purple-600 rounded-full p-1 border-2 border-white">
+                      <Camera className="w-3 h-3 text-white" />
+                    </div>
+                  </div>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleFileChange}
+                    className="hidden"
+                  />
+                </label>
+              </div>
+
+              {/* Domain Selection */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Select Domain
+                </label>
+                <select
+                  value={selectedResendConfigId}
+                  onChange={(e) => setSelectedResendConfigId(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-400 focus:border-transparent outline-none text-sm"
+                  required
+                >
+                  <option value="">Select a domain</option>
+                  {domains.map((domain) => (
+                    <option key={domain.id} value={domain.id}>
+                      {domain.domain}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Username */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Username
+                </label>
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="text"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value.toLowerCase())}
+                    placeholder="support"
+                    className="flex-1 px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-400 focus:border-transparent outline-none text-sm"
+                    required
+                  />
+                  <span className="text-gray-500 text-sm">@</span>
+                  <span className="text-gray-600 text-sm">
+                    {domains.find(d => d.id === selectedResendConfigId)?.domain || 'domain.com'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Display Name */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Display Name (Optional)
+                </label>
+                <input
+                  type="text"
+                  value={displayName}
+                  onChange={(e) => setDisplayName(e.target.value)}
+                  placeholder="John Doe"
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-400 focus:border-transparent outline-none text-sm"
+                />
+              </div>
+
+              {/* Forward To Email */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Forward To Email
+                </label>
+                <input
+                  type="email"
+                  value={forwardToEmail}
+                  onChange={(e) => setForwardToEmail(e.target.value)}
+                  placeholder="your-personal@email.com"
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-400 focus:border-transparent outline-none text-sm"
+                  required
+                />
+                <p className="text-xs text-gray-400 mt-1">
+                  Emails will be forwarded to this address
+                </p>
+              </div>
+
+              {/* Signature */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Email Signature (Optional)
+                </label>
+                <textarea
+                  value={signature}
+                  onChange={(e) => setSignature(e.target.value)}
+                  rows="2"
+                  placeholder="Best regards,&#10;John Doe"
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-400 focus:border-transparent outline-none text-sm"
+                />
+              </div>
+
+              {/* Default Checkbox */}
+              <div className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  id="isDefault"
+                  checked={isDefault}
+                  onChange={(e) => setIsDefault(e.target.checked)}
+                  className="rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+                />
+                <label htmlFor="isDefault" className="text-sm text-gray-700">
+                  Set as default email address
+                </label>
+              </div>
+
+              <div className="flex items-center space-x-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowCreateModal(false);
+                    setError('');
+                    setUsername('');
+                    setForwardToEmail('');
+                    setIsDefault(false);
+                    setDisplayName('');
+                    setSignature('');
+                    setProfilePicture(null);
+                    setProfilePreview(null);
+                    setSelectedResendConfigId('');
+                  }}
+                  className="flex-1 px-4 py-2 border border-gray-200 text-gray-700 text-sm rounded-lg hover:bg-gray-50 transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="flex-1 px-4 py-2 bg-purple-600 text-white text-sm rounded-lg hover:bg-purple-700 transition disabled:opacity-50"
+                >
+                  {isSubmitting ? (
+                    <Loader2 className="w-4 h-4 animate-spin mx-auto" />
+                  ) : (
+                    'Create Email'
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Email Details Modal - Fixed for mobile */}
+      {showDetailsModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-end lg:items-center justify-center z-50 p-0 lg:p-4">
+          <div className="bg-white rounded-t-xl lg:rounded-xl shadow-xl w-full max-w-md max-h-[85vh] overflow-y-auto">
+            <div className="p-5 sticky top-0 bg-white border-b border-gray-100 z-10">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <div className="p-1.5 bg-purple-50 rounded-lg">
+                    <Mail className="w-4 h-4 text-purple-600" />
+                  </div>
+                  <h2 className="text-lg font-semibold text-gray-800">Email Details</h2>
+                </div>
+                <button
+                  onClick={() => setShowDetailsModal(null)}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
-            <Editor height="256px" />
-            <AttachmentList />
-            <StatusMessages />
-            <input type="file" ref={fileInputRef} onChange={handleFileSelect} multiple className="hidden" />
-          </div>
+            <div className="p-5 space-y-4 pb-8">
+              <div className="flex items-center space-x-3">
+                {showDetailsModal.profilePicture?.url ? (
+                  <img
+                    src={showDetailsModal.profilePicture.url}
+                    alt={showDetailsModal.displayName}
+                    className="w-12 h-12 rounded-full object-cover"
+                  />
+                ) : (
+                  <div className="w-12 h-12 bg-purple-50 rounded-full flex items-center justify-center">
+                    <User className="w-6 h-6 text-purple-600" />
+                  </div>
+                )}
+                <div>
+                  <p className="font-medium text-gray-800">{showDetailsModal.displayName || showDetailsModal.username}</p>
+                  <p className="text-sm text-gray-500">{showDetailsModal.email}</p>
+                </div>
+              </div>
 
-          <div className="flex items-center justify-between px-5 py-3 bg-gray-50 border-t border-gray-200 rounded-b-xl">
-            <button type="button" onClick={() => fileInputRef.current?.click()}
-              className="flex items-center space-x-1 px-3 py-1.5 text-gray-600 hover:bg-gray-200 rounded-lg text-sm">
-              <Paperclip className="w-4 h-4" /><span>Attach</span>
-            </button>
-            <div className="flex items-center space-x-2">
-              <button type="button" onClick={handleDiscard} className="px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 rounded-lg">
-                Discard
-              </button>
-              <button type="submit" disabled={isLoading}
-                className="flex items-center space-x-2 px-4 py-1.5 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 text-sm">
-                {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                <span>Send</span>
+              <div className="space-y-2">
+                <div className="flex justify-between py-2 border-b border-gray-100">
+                  <span className="text-sm text-gray-500">Forward To:</span>
+                  <span className="text-sm text-gray-700">{showDetailsModal.forwardToEmail}</span>
+                </div>
+                <div className="flex justify-between py-2 border-b border-gray-100">
+                  <span className="text-sm text-gray-500">Domain:</span>
+                  <span className="text-sm text-gray-700">{showDetailsModal.domain}</span>
+                </div>
+                <div className="flex justify-between py-2 border-b border-gray-100">
+                  <span className="text-sm text-gray-500">Created:</span>
+                  <span className="text-sm text-gray-700">
+                    {format(new Date(showDetailsModal.createdAt), 'MMM d, yyyy')}
+                  </span>
+                </div>
+                <div className="flex justify-between py-2 border-b border-gray-100">
+                  <span className="text-sm text-gray-500">Default:</span>
+                  <span className="text-sm">
+                    {showDetailsModal.isDefault ? (
+                      <CheckCircle className="w-4 h-4 text-green-500" />
+                    ) : (
+                      <X className="w-4 h-4 text-gray-400" />
+                    )}
+                  </span>
+                </div>
+                {showDetailsModal.signature && (
+                  <div className="py-2">
+                    <p className="text-sm text-gray-500 mb-1">Signature:</p>
+                    <p className="text-sm text-gray-700 whitespace-pre-wrap">{showDetailsModal.signature}</p>
+                  </div>
+                )}
+              </div>
+
+              <button
+                onClick={() => {
+                  copyToClipboard(showDetailsModal.email, showDetailsModal._id);
+                  setShowDetailsModal(null);
+                }}
+                className="w-full flex items-center justify-center space-x-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition"
+              >
+                <Copy className="w-4 h-4" />
+                <span>Copy Email Address</span>
               </button>
             </div>
           </div>
-        </form>
-      </div>
+        </div>
+      )}
     </div>
-  );
-
-  return (
-    <>
-      <div className="md:hidden">{mobileView}</div>
-      <div className="hidden md:block">{desktopView}</div>
-    </>
   );
 };
 
-export default Compose;
+export default CustomEmails;
