@@ -463,6 +463,103 @@ const sendTestEmail = async (req, res) => {
   }
 };
 
+// Add this new function after registerPushSubscription
+// Register mobile push token (for Android/iOS via Capacitor)
+const registerMobileToken = async (req, res) => {
+  try {
+    const userId = req.userId;
+    const { fcmToken, deviceType, platform, action } = req.body;
+
+    if (!fcmToken) {
+      return res.status(400).json({
+        success: false,
+        message: 'FCM token is required',
+      });
+    }
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found',
+      });
+    }
+
+    // If action is unsubscribe, remove or deactivate the token
+    if (action === 'unsubscribe') {
+      const tokenIndex = user.pushTokens?.findIndex(t => t.token === fcmToken);
+      if (tokenIndex !== -1 && tokenIndex !== undefined) {
+        user.pushTokens[tokenIndex].isActive = false;
+        await user.save();
+      }
+      return res.status(200).json({
+        success: true,
+        message: 'Mobile token unregistered successfully',
+      });
+    }
+
+    // Initialize pushTokens array if it doesn't exist
+    if (!user.pushTokens) {
+      user.pushTokens = [];
+    }
+
+    // Check if token already exists
+    const existingIndex = user.pushTokens.findIndex(t => t.token === fcmToken);
+
+    const tokenData = {
+      token: fcmToken,
+      deviceType: deviceType || 'android',
+      platform: platform || 'capacitor',
+      isActive: true,
+      lastUsed: new Date(),
+    };
+
+    if (existingIndex >= 0) {
+      // Update existing token
+      user.pushTokens[existingIndex] = {
+        ...user.pushTokens[existingIndex],
+        ...tokenData,
+      };
+    } else {
+      // Add new token
+      user.pushTokens.push({
+        ...tokenData,
+        createdAt: new Date(),
+      });
+    }
+
+    // Enable push notifications in preferences if not already enabled
+    if (!user.notificationPreferences) {
+      user.notificationPreferences = {};
+    }
+    if (!user.notificationPreferences.push) {
+      user.notificationPreferences.push = {};
+    }
+    if (!user.notificationPreferences.push.enabled) {
+      user.notificationPreferences.push.enabled = true;
+    }
+
+    await user.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'Mobile push token registered successfully',
+      data: {
+        deviceType,
+        platform,
+        isActive: true
+      }
+    });
+  } catch (error) {
+    console.error('Register mobile token error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error registering mobile token',
+      error: error.message,
+    });
+  }
+};
+
 // Export all controllers
 export {
   getNotificationPreferences,
@@ -475,4 +572,5 @@ export {
   sendEmailNotification,
   notifyNewEmail,
   sendTestEmail,
+  registerMobileToken,
 };

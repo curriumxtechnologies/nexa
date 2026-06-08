@@ -4,6 +4,7 @@ import { useGetSettingsQuery, useUpdateSettingsMutation, useUpdateEmailSignature
 import { useGetNotificationPreferencesQuery, useUpdateEmailNotificationsMutation, useUpdatePushNotificationsMutation, useSendTestEmailMutation, useSendTestPushMutation } from '../slices/notificationsApiSlice';
 import { useToggleUser2FAMutation, useDeleteAccountMutation } from '../slices/userApiSlice';
 import { usePushNotifications } from '../hooks/usePushNotifications';
+import { useMobilePushNotifications } from '../hooks/useMobilePushNotifications';
 import { logout } from '../slices/authSlice';
 import { 
   Settings as SettingsIcon,
@@ -32,11 +33,73 @@ import {
   EyeOff,
   User,
   Key,
-  LogOut
+  LogOut,
+  Zap
 } from 'lucide-react';
 
-const Settings = () => {
-  const dispatch = useDispatch();
+// ==================== COMPONENTS ====================
+
+const DeleteAccountModal = ({ isOpen, onClose, onDelete, isDeleting }) => {
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+
+  const handleDelete = () => {
+    if (!password) {
+      setError('Please enter your password');
+      return;
+    }
+    setError('');
+    onDelete(password);
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl shadow-xl max-w-md w-full">
+        <div className="p-5">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center space-x-2">
+              <div className="p-1.5 bg-red-50 rounded-lg">
+                <Trash2 className="w-4 h-4 text-red-600" />
+              </div>
+              <h2 className="text-lg font-semibold text-gray-800">Delete Account</h2>
+            </div>
+            <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+          <div className="space-y-4">
+            <div className="p-3 bg-red-50 rounded-lg">
+              <p className="text-sm text-red-700"><strong>Warning:</strong> This action cannot be undone. All your data will be permanently deleted.</p>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Enter your password to confirm</label>
+              <input 
+                type="password" 
+                value={password} 
+                onChange={(e) => setPassword(e.target.value)} 
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-red-400 outline-none" 
+                placeholder="Your password" 
+              />
+              {error && <p className="text-xs text-red-600 mt-1">{error}</p>}
+            </div>
+            <div className="flex space-x-3">
+              <button onClick={onClose} className="flex-1 px-4 py-2 border border-gray-200 text-gray-700 rounded-lg">Cancel</button>
+              <button onClick={handleDelete} disabled={isDeleting} className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg disabled:opacity-50">
+                {isDeleting ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'Delete Account'}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ==================== SETTINGS HOOK ====================
+
+const useSettings = () => {
   const { userInfo } = useSelector((state) => state.auth);
   
   // Settings API
@@ -56,14 +119,11 @@ const Settings = () => {
   const [toggle2FA, { isLoading: isToggling2FA }] = useToggleUser2FAMutation();
   const [deleteAccount, { isLoading: isDeleting }] = useDeleteAccountMutation();
   
-  // Push notification hook
-  const {
-    isSupported,
-    isSubscribed,
-    permission,
-    subscribe,
-    unsubscribe,
-  } = usePushNotifications();
+  // Push notification hooks - detect platform
+  const isMobile = window.Capacitor?.isNativePlatform();
+  const webPush = usePushNotifications();
+  const mobilePush = useMobilePushNotifications();
+  const push = isMobile ? mobilePush : webPush;
   
   // Local state
   const [settings, setSettings] = useState({
@@ -130,22 +190,23 @@ const Settings = () => {
       });
       
       setPushNotif({
-        enabled: isSubscribed && (push.enabled || false),
+        enabled: push.enabled || false,
         newEmail: push.newEmail ?? true,
         loginAlerts: push.loginAlerts ?? true,
         domainVerified: push.domainVerified || false,
         teamInvites: push.teamInvites ?? true
       });
     }
-  }, [notificationsData, isSubscribed]);
+  }, [notificationsData]);
 
-  // Keep UI in sync when subscription state changes
+  // Keep push notification enabled state in sync with subscription
   useEffect(() => {
-    setPushNotif(prev => ({
-      ...prev,
-      enabled: isSubscribed && prev.enabled
-    }));
-  }, [isSubscribed]);
+    if (push.isSubscribed && pushNotif.enabled !== true) {
+      setPushNotif(prev => ({ ...prev, enabled: true }));
+    } else if (!push.isSubscribed && pushNotif.enabled) {
+      setPushNotif(prev => ({ ...prev, enabled: false }));
+    }
+  }, [push.isSubscribed]);
 
   const handleSettingChange = (key, value) => {
     setSettings(prev => ({ ...prev, [key]: value }));
@@ -222,16 +283,19 @@ const Settings = () => {
     }
   };
 
-  const handleDeleteAccount = async () => {
-    if (!deletePassword) {
-      setDeleteError('Please enter your password');
-      return;
-    }
-    
-    setDeleteError('');
-    
+  const handleSendTestPush = async () => {
     try {
-      await deleteAccount({ password: deletePassword }).unwrap();
+      await sendTestPush().unwrap();
+      setSuccess('Test push notification sent!');
+      setTimeout(() => setSuccess(''), 3000);
+    } catch (err) {
+      setError(err.data?.message || 'Failed to send test push');
+    }
+  };
+
+  const handleDeleteAccount = async (password) => {
+    try {
+      await deleteAccount({ password }).unwrap();
       dispatch(logout());
       window.location.href = '/login';
     } catch (err) {
@@ -241,278 +305,98 @@ const Settings = () => {
 
   const handlePushToggle = async (checked) => {
     if (checked) {
-      const success = await subscribe();
+      const success = await push.subscribe();
       if (success) {
         setPushNotif(prev => ({ ...prev, enabled: true }));
-        setSuccess('Push notifications enabled!');
+        setSuccess(`Push notifications enabled on ${isMobile ? 'your device' : 'this browser'}!`);
         setTimeout(() => setSuccess(''), 3000);
       } else {
         setPushNotif(prev => ({ ...prev, enabled: false }));
-        setError('Please allow notifications in your browser settings.');
+        setError('Please allow notifications in your settings.');
         setTimeout(() => setError(''), 4000);
       }
     } else {
-      await unsubscribe();
+      await push.unsubscribe();
       setPushNotif(prev => ({ ...prev, enabled: false }));
       setSuccess('Push notifications disabled.');
       setTimeout(() => setSuccess(''), 3000);
     }
   };
 
-  if (settingsLoading || notificationsLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <div className="text-center">
-          <Loader2 className="w-10 h-10 text-purple-600 animate-spin mx-auto mb-3" />
-          <p className="text-sm text-gray-400">Loading settings...</p>
-        </div>
-      </div>
-    );
-  }
+  const isLoading = settingsLoading || notificationsLoading;
 
-  // Mobile View
-  const MobileView = () => (
-    <div className="md:hidden bg-gray-50 min-h-screen pb-20">
-      <div className="bg-white border-b border-gray-100 px-4 py-3 sticky top-0 z-10">
-        <div className="flex items-center space-x-2">
-          <SettingsIcon className="w-5 h-5 text-purple-600" />
-          <h1 className="text-base font-semibold text-gray-800">Settings</h1>
-        </div>
-      </div>
+  return {
+    // State
+    settings,
+    emailNotif,
+    pushNotif,
+    emailSignature,
+    twoFactorEnabled,
+    showDeleteModal,
+    deletePassword,
+    deleteError,
+    success,
+    error,
+    isSaving,
+    isMobile,
+    push,
+    isLoading,
+    isDeleting,
+    isSendingTestEmail,
+    isSendingTestPush,
+    isToggling2FA,
+    
+    // Setters
+    setShowDeleteModal,
+    setDeletePassword,
+    setDeleteError,
+    setEmailSignature,
+    
+    // Handlers
+    handleSettingChange,
+    handleEmailNotifChange,
+    handlePushNotifChange,
+    handleSaveSettings,
+    handleToggleDarkMode,
+    handleToggle2FA,
+    handleSendTestEmail,
+    handleSendTestPush,
+    handleDeleteAccount,
+    handlePushToggle
+  };
+};
 
-      <div className="px-4 py-4 space-y-4">
-        {error && (
-          <div className="p-3 bg-red-50 rounded-lg flex items-center space-x-2">
-            <AlertCircle className="w-4 h-4 text-red-500" />
-            <p className="text-xs text-red-600">{error}</p>
-          </div>
-        )}
+// ==================== DESKTOP VIEW ====================
 
-        {success && (
-          <div className="p-3 bg-green-50 rounded-lg flex items-center space-x-2">
-            <CheckCircle className="w-4 h-4 text-green-500" />
-            <p className="text-xs text-green-600">{success}</p>
-          </div>
-        )}
+const DesktopSettings = ({ state }) => {
+  const {
+    settings,
+    emailNotif,
+    pushNotif,
+    emailSignature,
+    twoFactorEnabled,
+    isMobile,
+    push,
+    isSaving,
+    isToggling2FA,
+    isSendingTestEmail,
+    isSendingTestPush,
+    error,
+    success,
+    handleSettingChange,
+    handleEmailNotifChange,
+    handlePushNotifChange,
+    handleSaveSettings,
+    handleToggleDarkMode,
+    handleToggle2FA,
+    handleSendTestEmail,
+    handleSendTestPush,
+    handlePushToggle,
+    setEmailSignature,
+    setShowDeleteModal
+  } = state;
 
-        {/* Appearance Section */}
-        <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
-          <div className="px-4 py-3 bg-gray-50 border-b border-gray-100">
-            <div className="flex items-center space-x-2">
-              <Palette className="w-4 h-4 text-purple-600" />
-              <h2 className="text-sm font-semibold text-gray-800">Appearance</h2>
-            </div>
-          </div>
-          <div className="divide-y divide-gray-50">
-            <div className="p-4 flex items-center justify-between">
-              <div className="flex items-center space-x-3">
-                {settings.darkMode ? <Moon className="w-4 h-4 text-gray-500" /> : <Sun className="w-4 h-4 text-gray-500" />}
-                <div>
-                  <p className="text-sm font-medium text-gray-700">Dark Mode</p>
-                  <p className="text-xs text-gray-400">Switch between light and dark</p>
-                </div>
-              </div>
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input type="checkbox" checked={settings.darkMode} onChange={(e) => handleToggleDarkMode(e.target.checked)} className="sr-only peer" />
-                <div className="w-10 h-5 bg-gray-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-purple-600"></div>
-              </label>
-            </div>
-            <div className="p-4 flex items-center justify-between">
-              <div className="flex items-center space-x-3">
-                <Languages className="w-4 h-4 text-gray-500" />
-                <div>
-                  <p className="text-sm font-medium text-gray-700">Language</p>
-                  <p className="text-xs text-gray-400">Select your language</p>
-                </div>
-              </div>
-              <select value={settings.language} onChange={(e) => handleSettingChange('language', e.target.value)} className="text-sm border border-gray-200 rounded-lg px-2 py-1">
-                <option value="en">English</option>
-                <option value="es">Spanish</option>
-                <option value="fr">French</option>
-                <option value="de">German</option>
-                <option value="zh">Chinese</option>
-              </select>
-            </div>
-          </div>
-        </div>
-
-        {/* Email Notifications Section */}
-        <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
-          <div className="px-4 py-3 bg-gray-50 border-b border-gray-100">
-            <div className="flex items-center space-x-2">
-              <Mail className="w-4 h-4 text-purple-600" />
-              <h2 className="text-sm font-semibold text-gray-800">Email Notifications</h2>
-            </div>
-          </div>
-          <div className="divide-y divide-gray-50">
-            {Object.entries({
-              newEmail: 'New Email',
-              loginAlerts: 'Login Alerts',
-              domainVerified: 'Domain Verified',
-              teamInvites: 'Team Invites',
-              marketing: 'Marketing Emails'
-            }).map(([key, label]) => (
-              <div key={key} className="p-4 flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-700">{label}</p>
-                  <p className="text-xs text-gray-400">
-                    {key === 'newEmail' ? 'When you receive new emails' : 
-                     key === 'loginAlerts' ? 'When someone logs into your account' : 
-                     key === 'domainVerified' ? 'When your domain is verified' : 
-                     key === 'teamInvites' ? 'When you get team invitations' : 
-                     'Product updates and promotions'}
-                  </p>
-                </div>
-                <label className="relative inline-flex items-center cursor-pointer">
-                  <input type="checkbox" checked={emailNotif[key]} onChange={(e) => handleEmailNotifChange(key, e.target.checked)} className="sr-only peer" />
-                  <div className="w-10 h-5 bg-gray-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-purple-600"></div>
-                </label>
-              </div>
-            ))}
-            <div className="p-4">
-              <button onClick={handleSendTestEmail} disabled={isSendingTestEmail} className="w-full flex items-center justify-center space-x-2 py-2 border border-purple-200 text-purple-600 text-sm rounded-lg">
-                {isSendingTestEmail ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                <span>Send Test Email</span>
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Push Notifications Section */}
-        <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
-          <div className="px-4 py-3 bg-gray-50 border-b border-gray-100">
-            <div className="flex items-center space-x-2">
-              <Smartphone className="w-4 h-4 text-purple-600" />
-              <h2 className="text-sm font-semibold text-gray-800">Push Notifications</h2>
-            </div>
-          </div>
-          <div className="divide-y divide-gray-50">
-            <div className="p-4 flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-700">Enable Push</p>
-                <p className="text-xs text-gray-400">Get notifications on your device</p>
-              </div>
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input type="checkbox" checked={pushNotif.enabled} onChange={(e) => handlePushToggle(e.target.checked)} disabled={!isSupported || permission === 'denied'} className="sr-only peer" />
-                <div className="w-10 h-5 bg-gray-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-purple-600 disabled:opacity-50"></div>
-              </label>
-            </div>
-            {pushNotif.enabled && isSubscribed && (
-              <>
-                {['newEmail', 'loginAlerts', 'teamInvites'].map((key) => (
-                  <div key={key} className="p-4 flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium text-gray-700">{key === 'newEmail' ? 'New Email' : key === 'loginAlerts' ? 'Login Alerts' : 'Team Invites'}</p>
-                      <p className="text-xs text-gray-400">Push notification for {key === 'newEmail' ? 'new emails' : key === 'loginAlerts' ? 'login activity' : 'team invitations'}</p>
-                    </div>
-                    <label className="relative inline-flex items-center cursor-pointer">
-                      <input type="checkbox" checked={pushNotif[key]} onChange={(e) => handlePushNotifChange(key, e.target.checked)} className="sr-only peer" />
-                      <div className="w-10 h-5 bg-gray-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-purple-600"></div>
-                    </label>
-                  </div>
-                ))}
-                <div className="p-4">
-                  <button onClick={async () => { try { await sendTestPush().unwrap(); setSuccess('Test push sent!'); setTimeout(() => setSuccess(''), 3000); } catch (err) { setError('Failed to send test push'); } }} disabled={isSendingTestPush} className="w-full flex items-center justify-center space-x-2 py-2 border border-purple-200 text-purple-600 text-sm rounded-lg">
-                    {isSendingTestPush ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                    <span>Send Test Push</span>
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-
-        {/* Security Section */}
-        <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
-          <div className="px-4 py-3 bg-gray-50 border-b border-gray-100">
-            <div className="flex items-center space-x-2">
-              <Shield className="w-4 h-4 text-purple-600" />
-              <h2 className="text-sm font-semibold text-gray-800">Security</h2>
-            </div>
-          </div>
-          <div className="p-4 flex items-center justify-between">
-            <div className="flex items-center space-x-3">
-              <Lock className="w-4 h-4 text-gray-500" />
-              <div>
-                <p className="text-sm font-medium text-gray-700">Two-Factor Auth</p>
-                <p className="text-xs text-gray-400">Add extra security to your account</p>
-              </div>
-            </div>
-            <button onClick={handleToggle2FA} className={`px-3 py-1 rounded-lg text-xs font-medium ${twoFactorEnabled ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'}`}>
-              {isToggling2FA ? <Loader2 className="w-3 h-3 animate-spin" /> : (twoFactorEnabled ? 'Enabled' : 'Disabled')}
-            </button>
-          </div>
-        </div>
-
-        {/* Email Preferences Section */}
-        <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
-          <div className="px-4 py-3 bg-gray-50 border-b border-gray-100">
-            <div className="flex items-center space-x-2">
-              <Mail className="w-4 h-4 text-purple-600" />
-              <h2 className="text-sm font-semibold text-gray-800">Email Preferences</h2>
-            </div>
-          </div>
-          <div className="divide-y divide-gray-50">
-            <div className="p-4">
-              <label className="text-sm font-medium text-gray-700">Email Signature</label>
-              <textarea value={emailSignature} onChange={(e) => setEmailSignature(e.target.value)} rows="2" className="w-full mt-1 px-3 py-2 border border-gray-200 rounded-lg text-sm" placeholder="Best regards,&#10;Your Name" />
-              <p className="text-xs text-gray-400 mt-1">Added to all outgoing emails</p>
-            </div>
-            <div className="p-4 flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-700">Auto-save drafts</p>
-                <p className="text-xs text-gray-400">Automatically save email drafts</p>
-              </div>
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input type="checkbox" checked={settings.autoSave} onChange={(e) => handleSettingChange('autoSave', e.target.checked)} className="sr-only peer" />
-                <div className="w-10 h-5 bg-gray-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-purple-600"></div>
-              </label>
-            </div>
-            <div className="p-4 flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-700">Confirm before sending</p>
-                <p className="text-xs text-gray-400">Show confirmation before sending</p>
-              </div>
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input type="checkbox" checked={settings.confirmBeforeSend} onChange={(e) => handleSettingChange('confirmBeforeSend', e.target.checked)} className="sr-only peer" />
-                <div className="w-10 h-5 bg-gray-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-purple-600"></div>
-              </label>
-            </div>
-          </div>
-        </div>
-
-        {/* Data Section */}
-        <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
-          <div className="px-4 py-3 bg-gray-50 border-b border-gray-100">
-            <div className="flex items-center space-x-2">
-              <Database className="w-4 h-4 text-purple-600" />
-              <h2 className="text-sm font-semibold text-gray-800">Data</h2>
-            </div>
-          </div>
-          <div className="p-4">
-            <button onClick={() => setShowDeleteModal(true)} className="w-full flex items-center justify-between p-3 bg-red-50 rounded-lg">
-              <div className="flex items-center space-x-3">
-                <Trash2 className="w-4 h-4 text-red-600" />
-                <div>
-                  <p className="text-sm font-medium text-red-700">Delete Account</p>
-                  <p className="text-xs text-red-600">Permanently delete your account</p>
-                </div>
-              </div>
-              <ChevronRight className="w-4 h-4 text-red-600" />
-            </button>
-          </div>
-        </div>
-
-        {/* Save Button */}
-        <button onClick={handleSaveSettings} disabled={isSaving} className="w-full py-3 bg-purple-600 text-white rounded-xl font-medium text-sm disabled:opacity-50">
-          {isSaving ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : 'Save All Settings'}
-        </button>
-      </div>
-    </div>
-  );
-
-  // Desktop View
-  const DesktopView = () => (
+  return (
     <div className="hidden md:block min-h-screen bg-gray-50">
       <div className="px-6 py-6 lg:px-8">
         <div className="max-w-5xl mx-auto">
@@ -712,22 +596,35 @@ const Settings = () => {
               <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
                 <div className="px-5 py-3 bg-gray-50 border-b border-gray-100">
                   <div className="flex items-center space-x-2">
-                    <Smartphone className="w-4 h-4 text-purple-600" />
-                    <h2 className="text-sm font-semibold text-gray-800">Push Notifications</h2>
+                    {isMobile ? <Smartphone className="w-4 h-4 text-purple-600" /> : <Bell className="w-4 h-4 text-purple-600" />}
+                    <h2 className="text-sm font-semibold text-gray-800">
+                      {isMobile ? 'Mobile Push Notifications' : 'Web Push Notifications'}
+                    </h2>
                   </div>
                 </div>
                 <div className="p-5 space-y-4">
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="text-sm font-medium text-gray-700">Enable Push</p>
-                      <p className="text-xs text-gray-400">Get notifications on your device</p>
+                      <p className="text-xs text-gray-400">
+                        {isMobile 
+                          ? 'Get notifications on your mobile device' 
+                          : 'Get notifications in your browser'}
+                      </p>
                     </div>
                     <label className="relative inline-flex items-center cursor-pointer">
-                      <input type="checkbox" checked={pushNotif.enabled} onChange={(e) => handlePushToggle(e.target.checked)} disabled={!isSupported} className="sr-only peer" />
+                      <input 
+                        type="checkbox" 
+                        checked={pushNotif.enabled} 
+                        onChange={(e) => handlePushToggle(e.target.checked)} 
+                        disabled={!push.isSupported || push.permission === 'denied'} 
+                        className="sr-only peer" 
+                      />
                       <div className="w-11 h-6 bg-gray-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600 disabled:opacity-50"></div>
                     </label>
                   </div>
-                  {pushNotif.enabled && isSubscribed && (
+                  
+                  {pushNotif.enabled && push.isSubscribed && (
                     <>
                       <div className="flex items-center justify-between">
                         <div>
@@ -759,11 +656,30 @@ const Settings = () => {
                           <div className="w-11 h-6 bg-gray-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600"></div>
                         </label>
                       </div>
-                      <button onClick={async () => { try { await sendTestPush().unwrap(); setSuccess('Test push sent!'); setTimeout(() => setSuccess(''), 3000); } catch (err) { setError('Failed to send test push'); } }} disabled={isSendingTestPush} className="w-full flex items-center justify-center space-x-2 py-2 border border-purple-200 text-purple-600 rounded-lg text-sm">
+                      
+                      {isMobile && push.fcmToken && (
+                        <div className="mt-2 p-2 bg-gray-50 rounded-lg">
+                          <p className="text-xs text-gray-500 break-all">
+                            Device registered: {push.fcmToken.substring(0, 20)}...
+                          </p>
+                        </div>
+                      )}
+                      
+                      <button onClick={handleSendTestPush} disabled={isSendingTestPush} className="w-full flex items-center justify-center space-x-2 py-2 border border-purple-200 text-purple-600 rounded-lg text-sm">
                         {isSendingTestPush ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                         <span>Send Test Push</span>
                       </button>
                     </>
+                  )}
+                  
+                  {push.permission === 'denied' && (
+                    <div className="p-2 bg-yellow-50 rounded-lg">
+                      <p className="text-xs text-yellow-600">
+                        {isMobile 
+                          ? 'Please enable notifications in your device settings'
+                          : 'Please allow notifications in your browser settings'}
+                      </p>
+                    </div>
                   )}
                 </div>
               </div>
@@ -810,49 +726,331 @@ const Settings = () => {
       </div>
     </div>
   );
+};
 
-  // Delete Account Modal
-  const DeleteModal = () => (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl shadow-xl max-w-md w-full">
-        <div className="p-5">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center space-x-2">
-              <div className="p-1.5 bg-red-50 rounded-lg">
-                <Trash2 className="w-4 h-4 text-red-600" />
-              </div>
-              <h2 className="text-lg font-semibold text-gray-800">Delete Account</h2>
-            </div>
-            <button onClick={() => { setShowDeleteModal(false); setDeletePassword(''); setDeleteError(''); }} className="text-gray-400 hover:text-gray-600">
-              <X className="w-5 h-5" />
-            </button>
+// ==================== MOBILE VIEW ====================
+
+const MobileSettings = ({ state }) => {
+  const {
+    settings,
+    emailNotif,
+    pushNotif,
+    emailSignature,
+    twoFactorEnabled,
+    isMobile,
+    push,
+    isSaving,
+    isToggling2FA,
+    isSendingTestEmail,
+    isSendingTestPush,
+    error,
+    success,
+    handleSettingChange,
+    handleEmailNotifChange,
+    handlePushNotifChange,
+    handleSaveSettings,
+    handleToggleDarkMode,
+    handleToggle2FA,
+    handleSendTestEmail,
+    handleSendTestPush,
+    handlePushToggle,
+    setEmailSignature,
+    setShowDeleteModal
+  } = state;
+
+  return (
+    <div className="md:hidden bg-gray-50 min-h-screen pb-20">
+      <div className="bg-white border-b border-gray-100 px-4 py-3 sticky top-0 z-10">
+        <div className="flex items-center space-x-2">
+          <SettingsIcon className="w-5 h-5 text-purple-600" />
+          <h1 className="text-base font-semibold text-gray-800">Settings</h1>
+        </div>
+      </div>
+
+      <div className="px-4 py-4 space-y-4">
+        {error && (
+          <div className="p-3 bg-red-50 rounded-lg flex items-center space-x-2">
+            <AlertCircle className="w-4 h-4 text-red-500" />
+            <p className="text-xs text-red-600">{error}</p>
           </div>
-          <div className="space-y-4">
-            <div className="p-3 bg-red-50 rounded-lg">
-              <p className="text-sm text-red-700"><strong>Warning:</strong> This action cannot be undone. All your data will be permanently deleted.</p>
+        )}
+
+        {success && (
+          <div className="p-3 bg-green-50 rounded-lg flex items-center space-x-2">
+            <CheckCircle className="w-4 h-4 text-green-500" />
+            <p className="text-xs text-green-600">{success}</p>
+          </div>
+        )}
+
+        {/* Appearance Section */}
+        <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+          <div className="px-4 py-3 bg-gray-50 border-b border-gray-100">
+            <div className="flex items-center space-x-2">
+              <Palette className="w-4 h-4 text-purple-600" />
+              <h2 className="text-sm font-semibold text-gray-800">Appearance</h2>
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Enter your password to confirm</label>
-              <input type="password" value={deletePassword} onChange={(e) => setDeletePassword(e.target.value)} className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-red-400 outline-none" placeholder="Your password" />
-              {deleteError && <p className="text-xs text-red-600 mt-1">{deleteError}</p>}
+          </div>
+          <div className="divide-y divide-gray-50">
+            <div className="p-4 flex items-center justify-between">
+              <div className="flex items-center space-x-3">
+                {settings.darkMode ? <Moon className="w-4 h-4 text-gray-500" /> : <Sun className="w-4 h-4 text-gray-500" />}
+                <div>
+                  <p className="text-sm font-medium text-gray-700">Dark Mode</p>
+                  <p className="text-xs text-gray-400">Switch between light and dark</p>
+                </div>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input type="checkbox" checked={settings.darkMode} onChange={(e) => handleToggleDarkMode(e.target.checked)} className="sr-only peer" />
+                <div className="w-10 h-5 bg-gray-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-purple-600"></div>
+              </label>
             </div>
-            <div className="flex space-x-3">
-              <button onClick={() => { setShowDeleteModal(false); setDeletePassword(''); setDeleteError(''); }} className="flex-1 px-4 py-2 border border-gray-200 text-gray-700 rounded-lg">Cancel</button>
-              <button onClick={handleDeleteAccount} disabled={isDeleting} className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg disabled:opacity-50">
-                {isDeleting ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'Delete Account'}
+            <div className="p-4 flex items-center justify-between">
+              <div className="flex items-center space-x-3">
+                <Languages className="w-4 h-4 text-gray-500" />
+                <div>
+                  <p className="text-sm font-medium text-gray-700">Language</p>
+                  <p className="text-xs text-gray-400">Select your language</p>
+                </div>
+              </div>
+              <select value={settings.language} onChange={(e) => handleSettingChange('language', e.target.value)} className="text-sm border border-gray-200 rounded-lg px-2 py-1">
+                <option value="en">English</option>
+                <option value="es">Spanish</option>
+                <option value="fr">French</option>
+                <option value="de">German</option>
+                <option value="zh">Chinese</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        {/* Email Notifications Section */}
+        <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+          <div className="px-4 py-3 bg-gray-50 border-b border-gray-100">
+            <div className="flex items-center space-x-2">
+              <Mail className="w-4 h-4 text-purple-600" />
+              <h2 className="text-sm font-semibold text-gray-800">Email Notifications</h2>
+            </div>
+          </div>
+          <div className="divide-y divide-gray-50">
+            {Object.entries({
+              newEmail: 'New Email',
+              loginAlerts: 'Login Alerts',
+              domainVerified: 'Domain Verified',
+              teamInvites: 'Team Invites',
+              marketing: 'Marketing Emails'
+            }).map(([key, label]) => (
+              <div key={key} className="p-4 flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-700">{label}</p>
+                  <p className="text-xs text-gray-400">
+                    {key === 'newEmail' ? 'When you receive new emails' : 
+                     key === 'loginAlerts' ? 'When someone logs into your account' : 
+                     key === 'domainVerified' ? 'When your domain is verified' : 
+                     key === 'teamInvites' ? 'When you get team invitations' : 
+                     'Product updates and promotions'}
+                  </p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input type="checkbox" checked={emailNotif[key]} onChange={(e) => handleEmailNotifChange(key, e.target.checked)} className="sr-only peer" />
+                  <div className="w-10 h-5 bg-gray-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-purple-600"></div>
+                </label>
+              </div>
+            ))}
+            <div className="p-4">
+              <button onClick={handleSendTestEmail} disabled={isSendingTestEmail} className="w-full flex items-center justify-center space-x-2 py-2 border border-purple-200 text-purple-600 text-sm rounded-lg">
+                {isSendingTestEmail ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                <span>Send Test Email</span>
               </button>
             </div>
           </div>
         </div>
+
+        {/* Push Notifications Section */}
+        <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+          <div className="px-4 py-3 bg-gray-50 border-b border-gray-100">
+            <div className="flex items-center space-x-2">
+              {isMobile ? <Smartphone className="w-4 h-4 text-purple-600" /> : <Bell className="w-4 h-4 text-purple-600" />}
+              <h2 className="text-sm font-semibold text-gray-800">
+                {isMobile ? 'Mobile Push' : 'Web Push'}
+              </h2>
+            </div>
+          </div>
+          <div className="divide-y divide-gray-50">
+            <div className="p-4 flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-700">Enable Push</p>
+                <p className="text-xs text-gray-400">Get notifications on your device</p>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input 
+                  type="checkbox" 
+                  checked={pushNotif.enabled} 
+                  onChange={(e) => handlePushToggle(e.target.checked)} 
+                  disabled={!push.isSupported || push.permission === 'denied'} 
+                  className="sr-only peer" 
+                />
+                <div className="w-10 h-5 bg-gray-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-purple-600 disabled:opacity-50"></div>
+              </label>
+            </div>
+            
+            {pushNotif.enabled && push.isSubscribed && (
+              <>
+                {['newEmail', 'loginAlerts', 'teamInvites'].map((key) => (
+                  <div key={key} className="p-4 flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium text-gray-700">{key === 'newEmail' ? 'New Email' : key === 'loginAlerts' ? 'Login Alerts' : 'Team Invites'}</p>
+                      <p className="text-xs text-gray-400">Push notification for {key === 'newEmail' ? 'new emails' : key === 'loginAlerts' ? 'login activity' : 'team invitations'}</p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input type="checkbox" checked={pushNotif[key]} onChange={(e) => handlePushNotifChange(key, e.target.checked)} className="sr-only peer" />
+                      <div className="w-10 h-5 bg-gray-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-purple-600"></div>
+                    </label>
+                  </div>
+                ))}
+                
+                {isMobile && push.fcmToken && (
+                  <div className="p-4 bg-gray-50">
+                    <p className="text-xs text-gray-500 break-all">
+                      Device registered: {push.fcmToken.substring(0, 20)}...
+                    </p>
+                  </div>
+                )}
+                
+                <div className="p-4">
+                  <button onClick={handleSendTestPush} disabled={isSendingTestPush} className="w-full flex items-center justify-center space-x-2 py-2 border border-purple-200 text-purple-600 text-sm rounded-lg">
+                    {isSendingTestPush ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                    <span>Send Test Push</span>
+                  </button>
+                </div>
+              </>
+            )}
+            
+            {push.permission === 'denied' && (
+              <div className="p-4 bg-yellow-50">
+                <p className="text-xs text-yellow-600">
+                  Please enable notifications in your device settings
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Security Section */}
+        <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+          <div className="px-4 py-3 bg-gray-50 border-b border-gray-100">
+            <div className="flex items-center space-x-2">
+              <Shield className="w-4 h-4 text-purple-600" />
+              <h2 className="text-sm font-semibold text-gray-800">Security</h2>
+            </div>
+          </div>
+          <div className="p-4 flex items-center justify-between">
+            <div className="flex items-center space-x-3">
+              <Lock className="w-4 h-4 text-gray-500" />
+              <div>
+                <p className="text-sm font-medium text-gray-700">Two-Factor Auth</p>
+                <p className="text-xs text-gray-400">Add extra security to your account</p>
+              </div>
+            </div>
+            <button onClick={handleToggle2FA} className={`px-3 py-1 rounded-lg text-xs font-medium ${twoFactorEnabled ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'}`}>
+              {isToggling2FA ? <Loader2 className="w-3 h-3 animate-spin" /> : (twoFactorEnabled ? 'Enabled' : 'Disabled')}
+            </button>
+          </div>
+        </div>
+
+        {/* Email Preferences Section */}
+        <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+          <div className="px-4 py-3 bg-gray-50 border-b border-gray-100">
+            <div className="flex items-center space-x-2">
+              <Mail className="w-4 h-4 text-purple-600" />
+              <h2 className="text-sm font-semibold text-gray-800">Email Preferences</h2>
+            </div>
+          </div>
+          <div className="divide-y divide-gray-50">
+            <div className="p-4">
+              <label className="text-sm font-medium text-gray-700">Email Signature</label>
+              <textarea value={emailSignature} onChange={(e) => setEmailSignature(e.target.value)} rows="2" className="w-full mt-1 px-3 py-2 border border-gray-200 rounded-lg text-sm" placeholder="Best regards,&#10;Your Name" />
+              <p className="text-xs text-gray-400 mt-1">Added to all outgoing emails</p>
+            </div>
+            <div className="p-4 flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-700">Auto-save drafts</p>
+                <p className="text-xs text-gray-400">Automatically save email drafts</p>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input type="checkbox" checked={settings.autoSave} onChange={(e) => handleSettingChange('autoSave', e.target.checked)} className="sr-only peer" />
+                <div className="w-10 h-5 bg-gray-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-purple-600"></div>
+              </label>
+            </div>
+            <div className="p-4 flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-700">Confirm before sending</p>
+                <p className="text-xs text-gray-400">Show confirmation before sending</p>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input type="checkbox" checked={settings.confirmBeforeSend} onChange={(e) => handleSettingChange('confirmBeforeSend', e.target.checked)} className="sr-only peer" />
+                <div className="w-10 h-5 bg-gray-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-purple-600"></div>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        {/* Data Section */}
+        <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+          <div className="px-4 py-3 bg-gray-50 border-b border-gray-100">
+            <div className="flex items-center space-x-2">
+              <Database className="w-4 h-4 text-purple-600" />
+              <h2 className="text-sm font-semibold text-gray-800">Data</h2>
+            </div>
+          </div>
+          <div className="p-4">
+            <button onClick={() => setShowDeleteModal(true)} className="w-full flex items-center justify-between p-3 bg-red-50 rounded-lg">
+              <div className="flex items-center space-x-3">
+                <Trash2 className="w-4 h-4 text-red-600" />
+                <div>
+                  <p className="text-sm font-medium text-red-700">Delete Account</p>
+                  <p className="text-xs text-red-600">Permanently delete your account</p>
+                </div>
+              </div>
+              <ChevronRight className="w-4 h-4 text-red-600" />
+            </button>
+          </div>
+        </div>
+
+        {/* Save Button */}
+        <button onClick={handleSaveSettings} disabled={isSaving} className="w-full py-3 bg-purple-600 text-white rounded-xl font-medium text-sm disabled:opacity-50">
+          {isSaving ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : 'Save All Settings'}
+        </button>
       </div>
     </div>
   );
+};
+
+// ==================== MAIN COMPONENT ====================
+
+const Settings = () => {
+  const state = useSettings();
+
+  if (state.isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="text-center">
+          <Loader2 className="w-10 h-10 text-purple-600 animate-spin mx-auto mb-3" />
+          <p className="text-sm text-gray-400">Loading settings...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <>
-      <MobileView />
-      <DesktopView />
-      {showDeleteModal && <DeleteModal />}
+      <DesktopSettings state={state} />
+      <MobileSettings state={state} />
+      <DeleteAccountModal 
+        isOpen={state.showDeleteModal}
+        onClose={() => state.setShowDeleteModal(false)}
+        onDelete={state.handleDeleteAccount}
+        isDeleting={state.isDeleting}
+      />
     </>
   );
 };

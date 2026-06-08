@@ -33,10 +33,19 @@ export const notificationsApiSlice = apiSlice.injectEndpoints({
             invalidatesTags: ['NotificationPreferences'],
         }),
 
-        // Register push subscription
+        // Register web push subscription
         registerPushSubscription: builder.mutation({
             query: (data) => ({
                 url: `${NOTIFICATIONS_URL}/push-subscription`,
+                method: 'POST',
+                body: data,
+            }),
+        }),
+
+        // Register mobile push token (Android/iOS via Capacitor)
+        registerMobileToken: builder.mutation({
+            query: (data) => ({
+                url: `${NOTIFICATIONS_URL}/register-token`,
                 method: 'POST',
                 body: data,
             }),
@@ -74,6 +83,7 @@ export const {
     useUpdateEmailNotificationsMutation,
     useUpdatePushNotificationsMutation,
     useRegisterPushSubscriptionMutation,
+    useRegisterMobileTokenMutation,  // ← Added this
     useSendTestPushMutation,
     useSendTestEmailMutation,
     useGetVapidPublicKeyQuery,

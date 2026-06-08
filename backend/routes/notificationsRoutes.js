@@ -5,6 +5,7 @@ import {
   updateEmailNotifications,
   updatePushNotifications,
   registerPushSubscription,
+  registerMobileToken,
   sendTestPush,
   getVapidPublicKey,
   sendTestEmail,
@@ -24,9 +25,10 @@ router.put("/email", updateEmailNotifications);
 router.put("/push", updatePushNotifications);
 
 // Push subscription management
-router.post("/push-subscription", registerPushSubscription);
+router.post("/push-subscription", registerPushSubscription);  // Web push
+router.post("/register-token", registerMobileToken);          // Mobile push (Android/iOS)
 
-// Test notification
+// Test notifications
 router.post("/test-push", sendTestPush);
 router.post("/test-email", sendTestEmail);
 

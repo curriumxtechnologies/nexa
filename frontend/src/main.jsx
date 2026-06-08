@@ -1,11 +1,11 @@
-import { StrictMode } from 'react'
+import React, { StrictMode, useEffect } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.jsx'
 import store from "./store";
 
 import { createBrowserRouter, RouterProvider } from "react-router-dom";
-import { Provider } from "react-redux";
+import { Provider, useDispatch, useSelector } from "react-redux";
 
 import Login from "./screens/Login.jsx";
 import Register from "./screens/Register.jsx";
@@ -24,49 +24,99 @@ import Settings from "./screens/Settings.jsx";
 import Stats from "./screens/Stats.jsx";
 import CustomEmails from "./screens/CustomEmails.jsx";
 import EmailDetails from "./screens/EmailDetails.jsx";
+import PrivateRoute from "./components/PrivateRoute.jsx";
+
+import { useMobilePushNotifications } from './hooks/useMobilePushNotifications';
+
+// Component to handle push notification initialization
+const PushNotificationInitializer = () => {
+  const { userInfo } = useSelector((state) => state.auth);
+  const mobilePush = useMobilePushNotifications();
+
+  useEffect(() => {
+    // Only initialize if user is logged in and on mobile device
+    if (userInfo && window.Capacitor?.isNativePlatform()) {
+      console.log('📱 Initializing mobile push notifications');
+      
+      // Auto-subscribe if not already subscribed
+      if (!mobilePush.isSubscribed && mobilePush.permission !== 'denied') {
+        setTimeout(() => {
+          mobilePush.subscribe();
+        }, 2000); // Delay to ensure user is logged in
+      }
+    }
+  }, [userInfo, mobilePush.isSubscribed]);
+
+  return null;
+};
 
 const router = createBrowserRouter([
-  {path: "/", element: <App />, children:[
-    {index: true, element: <a href="/login">Login page</a>},
-    {path: "login", element: <Login />},
-    {path: "register", element: <Register />},
-    {path: "verify-email", element: <VerifyEmail />},
-    {path: "/", element: <MainLayout />, children: [
-      {path: "inbox", element: <Inbox />},
-      {path: "compose", element: <Compose />},
-      {path: "starred", element: <Starred />},
-      {path: "sent", element: <Sent />},
-      {path: "archive", element: <ArchivePage />},
-      {path: "trash", element: <Trash />},
-      {path: "domains", element: <Domains />},
-      {path: "team", element: <TeamAccess />},
-      {path: "profile", element: <Profile />},
-      {path: "settings", element: <Settings />},
-      {path: "stats", element: <Stats />},
-      {path: "custom-emails", element: <CustomEmails />},
-      {path: "email/:emailId", element: <EmailDetails />},
-    ]},
-  ]},
-])
+  {
+    path: "/",
+    element: <App />,
+    children: [
+      { index: true, element: <a href="/login">Login page</a> },
+      { path: "login", element: <Login /> },
+      { path: "register", element: <Register /> },
+      { path: "verify-email", element: <VerifyEmail /> },
+      
+      // Protected routes wrapped with PrivateRoute
+      {
+        element: <PrivateRoute />,
+        children: [
+          {
+            element: <MainLayout />,
+            children: [
+              { path: "inbox", element: <Inbox /> },
+              { path: "compose", element: <Compose /> },
+              { path: "starred", element: <Starred /> },
+              { path: "sent", element: <Sent /> },
+              { path: "archive", element: <ArchivePage /> },
+              { path: "trash", element: <Trash /> },
+              { path: "domains", element: <Domains /> },
+              { path: "team", element: <TeamAccess /> },
+              { path: "profile", element: <Profile /> },
+              { path: "settings", element: <Settings /> },
+              { path: "stats", element: <Stats /> },
+              { path: "custom-emails", element: <CustomEmails /> },
+              { path: "email/:emailId", element: <EmailDetails /> },
+            ]
+          }
+        ]
+      }
+    ]
+  },
+]);
 
-// Register service worker for push notifications
-if ('serviceWorker' in navigator) {
+// Register service worker for web push notifications (browsers only)
+if ('serviceWorker' in navigator && !window.Capacitor?.isNativePlatform()) {
   window.addEventListener('load', () => {
     navigator.serviceWorker
       .register('/sw.js')
       .then((registration) => {
-        console.log('SW registered:', registration.scope);
+        console.log('✅ Web SW registered:', registration.scope);
       })
       .catch((error) => {
-        console.error('SW registration failed:', error);
+        console.error('❌ Web SW registration failed:', error);
       });
   });
 }
 
-createRoot(document.getElementById('root')).render(
-  <Provider store={store}>
-    <StrictMode>
-      <RouterProvider router={router} />
-    </StrictMode>
-  </Provider>
-)
+// For Capacitor/Cordova, we don't need service worker - native handles it
+if (window.Capacitor?.isNativePlatform()) {
+  console.log('📱 Running on Capacitor - using native push notifications');
+}
+
+// Root component with push notification initializer
+const Root = () => {
+  return (
+    <Provider store={store}>
+      <StrictMode>
+        <PushNotificationInitializer />
+        <RouterProvider router={router} />
+      </StrictMode>
+    </Provider>
+  );
+};
+
+createRoot(document.getElementById('root')).render(<Root />);
