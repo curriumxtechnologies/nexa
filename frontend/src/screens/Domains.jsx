@@ -1,5 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { useGetResendConfigsQuery, useAddResendConfigMutation, useAddWebhookSecretMutation, useGetWebhookConfigQuery } from '../slices/emailApiSlice';
+import { 
+  useGetResendConfigsQuery, 
+  useAddResendConfigMutation, 
+  useAddWebhookSecretMutation,
+  useUpdateWebhookSecretMutation,
+  useDeleteWebhookSecretMutation,
+  useGetWebhookConfigQuery 
+} from '../slices/emailApiSlice';
 import { 
   Globe, 
   Plus, 
@@ -19,13 +26,17 @@ import {
   Link as LinkIcon,
   Zap,
   Settings,
-  ChevronRight
+  ChevronRight,
+  Edit,
+  Trash2,
+  RefreshCw
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 
 const Domains = () => {
   const [showAddModal, setShowAddModal] = useState(false);
   const [showWebhookModal, setShowWebhookModal] = useState(null);
+  const [webhookMode, setWebhookMode] = useState('add'); // 'add' or 'edit'
   const [domain, setDomain] = useState('');
   const [apiKey, setApiKey] = useState('');
   const [webhookSecret, setWebhookSecret] = useState('');
@@ -35,12 +46,19 @@ const Domains = () => {
   const [webhookError, setWebhookError] = useState('');
   const [copiedId, setCopiedId] = useState(null);
   const [copiedUrl, setCopiedUrl] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(null);
+  const [isDeletingWebhook, setIsDeletingWebhook] = useState(false);
 
   const { data, isLoading, error: fetchError, refetch } = useGetResendConfigsQuery();
   const [addResendConfig] = useAddResendConfigMutation();
   const [addWebhookSecret] = useAddWebhookSecretMutation();
+  const [updateWebhookSecret] = useUpdateWebhookSecretMutation();
+  const [deleteWebhookSecret] = useDeleteWebhookSecretMutation();
 
   const domains = data?.data || [];
+  
+  // Get API URL from environment variables (Vite uses import.meta.env)
+  const API_URL = import.meta.env.VITE_API_URL || 'https://nexa-api-d9rx.onrender.com';
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -54,9 +72,9 @@ const Domains = () => {
       setApiKey('');
       refetch();
       
-      // Automatically open webhook modal for the new domain
       if (result.data?.configId) {
         setTimeout(() => {
+          setWebhookMode('add');
           setShowWebhookModal(result.data.configId);
         }, 500);
       }
@@ -67,7 +85,7 @@ const Domains = () => {
     }
   };
 
-  const handleAddWebhookSecret = async (configId) => {
+  const handleSaveWebhookSecret = async (configId) => {
     if (!webhookSecret) {
       setWebhookError('Please enter a webhook secret');
       return;
@@ -77,18 +95,47 @@ const Domains = () => {
     setIsAddingWebhook(true);
     
     try {
-      await addWebhookSecret({ 
-        resendConfigId: configId, 
-        webhookSecret 
-      }).unwrap();
+      if (webhookMode === 'edit') {
+        await updateWebhookSecret({ 
+          resendConfigId: configId, 
+          data: { webhookSecret }
+        }).unwrap();
+      } else {
+        await addWebhookSecret({ 
+          resendConfigId: configId, 
+          webhookSecret 
+        }).unwrap();
+      }
       setShowWebhookModal(null);
       setWebhookSecret('');
+      setWebhookMode('add');
       refetch();
     } catch (err) {
       setWebhookError(err.data?.message || 'Failed to save webhook secret');
     } finally {
       setIsAddingWebhook(false);
     }
+  };
+
+  const handleDeleteWebhookSecret = async (configId) => {
+    setIsDeletingWebhook(true);
+    try {
+      await deleteWebhookSecret(configId).unwrap();
+      setShowDeleteConfirm(null);
+      setShowWebhookModal(null);
+      refetch();
+    } catch (err) {
+      setWebhookError(err.data?.message || 'Failed to delete webhook secret');
+    } finally {
+      setIsDeletingWebhook(false);
+    }
+  };
+
+  const openWebhookModal = (configId, hasSecret, mode = 'edit') => {
+    setWebhookMode(mode);
+    setShowWebhookModal(configId);
+    setWebhookSecret('');
+    setWebhookError('');
   };
 
   const copyToClipboard = (text, id) => {
@@ -247,7 +294,7 @@ const Domains = () => {
                       {getWebhookStatusBadge(domainItem.hasWebhookSecret)}
                       {!domainItem.hasWebhookSecret && domainItem.isVerified && (
                         <button
-                          onClick={() => setShowWebhookModal(domainItem.id)}
+                          onClick={() => openWebhookModal(domainItem.id, false, 'add')}
                           className="text-xs text-purple-600 hover:text-purple-700 flex items-center space-x-1"
                         >
                           <Settings className="w-3 h-3" />
@@ -255,13 +302,22 @@ const Domains = () => {
                         </button>
                       )}
                       {domainItem.hasWebhookSecret && (
-                        <button
-                          onClick={() => setShowWebhookModal(domainItem.id)}
-                          className="text-xs text-gray-500 hover:text-gray-700 flex items-center space-x-1"
-                        >
-                          <Settings className="w-3 h-3" />
-                          <span>Edit</span>
-                        </button>
+                        <div className="flex items-center space-x-2">
+                          <button
+                            onClick={() => openWebhookModal(domainItem.id, true, 'edit')}
+                            className="text-xs text-gray-500 hover:text-purple-600 flex items-center space-x-1"
+                          >
+                            <Edit className="w-3 h-3" />
+                            <span>Update</span>
+                          </button>
+                          <button
+                            onClick={() => setShowDeleteConfirm(domainItem.id)}
+                            className="text-xs text-gray-500 hover:text-red-600 flex items-center space-x-1"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                            <span>Remove</span>
+                          </button>
+                        </div>
                       )}
                     </div>
                   </div>
@@ -278,12 +334,30 @@ const Domains = () => {
                     <div className="flex items-center space-x-3">
                       {!domainItem.hasWebhookSecret && domainItem.isVerified && (
                         <button
-                          onClick={() => setShowWebhookModal(domainItem.id)}
+                          onClick={() => openWebhookModal(domainItem.id, false, 'add')}
                           className="lg:hidden text-xs text-purple-600 flex items-center space-x-1"
                         >
                           <Webhook className="w-3.5 h-3.5" />
                           <span>Setup Webhook</span>
                         </button>
+                      )}
+                      {domainItem.hasWebhookSecret && (
+                        <div className="lg:hidden flex items-center space-x-2">
+                          <button
+                            onClick={() => openWebhookModal(domainItem.id, true, 'edit')}
+                            className="text-xs text-gray-500 flex items-center space-x-1"
+                          >
+                            <Edit className="w-3 h-3" />
+                            <span>Update</span>
+                          </button>
+                          <button
+                            onClick={() => setShowDeleteConfirm(domainItem.id)}
+                            className="text-xs text-gray-500 flex items-center space-x-1"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                            <span>Remove</span>
+                          </button>
+                        </div>
                       )}
                       <button
                         onClick={() => window.open(`https://resend.com/domains/${domainItem.domain}`, '_blank')}
@@ -313,23 +387,14 @@ const Domains = () => {
                       </span>
                     </div>
                   )}
-                  <div className="flex items-center justify-between text-xs mt-2 pt-2 border-t border-gray-50">
-                    <span className="text-gray-500">Webhook:</span>
-                    {domainItem.hasWebhookSecret ? (
-                      <span className="text-green-600 flex items-center space-x-1">
-                        <CheckCircle className="w-3 h-3" />
-                        <span>Configured</span>
+                  {domainItem.webhookConfiguredAt && (
+                    <div className="flex items-center justify-between text-xs mt-1">
+                      <span className="text-gray-500">Webhook:</span>
+                      <span className="text-green-600">
+                        {formatDistanceToNow(new Date(domainItem.webhookConfiguredAt), { addSuffix: true })}
                       </span>
-                    ) : (
-                      <button
-                        onClick={() => setShowWebhookModal(domainItem.id)}
-                        className="text-purple-600 flex items-center space-x-1"
-                      >
-                        <Plus className="w-3 h-3" />
-                        <span>Configure</span>
-                      </button>
-                    )}
-                  </div>
+                    </div>
+                  )}
                 </div>
               </div>
             ))}
@@ -434,13 +499,16 @@ const Domains = () => {
                   <div className="p-1.5 bg-purple-50 rounded-lg">
                     <Webhook className="w-4 h-4 text-purple-600" />
                   </div>
-                  <h2 className="text-lg font-semibold text-gray-800">Configure Webhook</h2>
+                  <h2 className="text-lg font-semibold text-gray-800">
+                    {webhookMode === 'edit' ? 'Update Webhook' : 'Configure Webhook'}
+                  </h2>
                 </div>
                 <button
                   onClick={() => {
                     setShowWebhookModal(null);
                     setWebhookSecret('');
                     setWebhookError('');
+                    setWebhookMode('add');
                   }}
                   className="text-gray-400 hover:text-gray-600"
                 >
@@ -454,10 +522,10 @@ const Domains = () => {
                   <p className="text-xs font-medium text-gray-700 mb-2">Step 1: Copy Webhook URL</p>
                   <div className="flex items-center justify-between bg-white border border-gray-200 rounded-lg p-2">
                     <code className="text-xs text-gray-600 truncate">
-                      {`https://nexa-api-d9rx.onrender.com/api/email/webhook/receive`}
+                      {`${API_URL}/api/email/webhook/receive`}
                     </code>
                     <button
-                      onClick={() => copyWebhookUrl(`https://nexa-api-d9rx.onrender.com/api/email/webhook/receive`)}
+                      onClick={() => copyWebhookUrl(`${API_URL}/api/email/webhook/receive`)}
                       className="text-gray-400 hover:text-purple-600 ml-2 flex-shrink-0"
                     >
                       {copiedUrl ? (
@@ -514,20 +582,73 @@ const Domains = () => {
                       setShowWebhookModal(null);
                       setWebhookSecret('');
                       setWebhookError('');
+                      setWebhookMode('add');
                     }}
                     className="flex-1 px-4 py-2 border border-gray-200 text-gray-700 text-sm rounded-lg hover:bg-gray-50 transition"
                   >
                     Cancel
                   </button>
                   <button
-                    onClick={() => handleAddWebhookSecret(showWebhookModal)}
+                    onClick={() => handleSaveWebhookSecret(showWebhookModal)}
                     disabled={isAddingWebhook}
                     className="flex-1 px-4 py-2 bg-purple-600 text-white text-sm rounded-lg hover:bg-purple-700 transition disabled:opacity-50"
                   >
                     {isAddingWebhook ? (
                       <Loader2 className="w-4 h-4 animate-spin mx-auto" />
                     ) : (
-                      'Save Secret'
+                      webhookMode === 'edit' ? 'Update Secret' : 'Save Secret'
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Webhook Confirmation Modal */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl max-w-md w-full">
+            <div className="p-5">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center space-x-2">
+                  <div className="p-1.5 bg-red-50 rounded-lg">
+                    <Trash2 className="w-4 h-4 text-red-600" />
+                  </div>
+                  <h2 className="text-lg font-semibold text-gray-800">Remove Webhook</h2>
+                </div>
+                <button
+                  onClick={() => setShowDeleteConfirm(null)}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <XCircle className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                <p className="text-sm text-gray-600">
+                  Are you sure you want to remove the webhook secret for this domain? 
+                  You will no longer receive incoming emails.
+                </p>
+
+                <div className="flex items-center space-x-3">
+                  <button
+                    type="button"
+                    onClick={() => setShowDeleteConfirm(null)}
+                    className="flex-1 px-4 py-2 border border-gray-200 text-gray-700 text-sm rounded-lg hover:bg-gray-50 transition"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => handleDeleteWebhookSecret(showDeleteConfirm)}
+                    disabled={isDeletingWebhook}
+                    className="flex-1 px-4 py-2 bg-red-600 text-white text-sm rounded-lg hover:bg-red-700 transition disabled:opacity-50"
+                  >
+                    {isDeletingWebhook ? (
+                      <Loader2 className="w-4 h-4 animate-spin mx-auto" />
+                    ) : (
+                      'Remove'
                     )}
                   </button>
                 </div>
