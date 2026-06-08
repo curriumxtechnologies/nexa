@@ -1,1 +1,30 @@
 @import "tailwindcss";
+
+/* Fix input text color */
+input,
+textarea,
+select,
+[contenteditable] {
+  color: #1a1a1a !important;
+  background-color: #ffffff !important;
+}
+
+/* For dark mode if enabled */
+.dark input,
+.dark textarea,
+.dark select {
+  color: #f3f4f6 !important;
+  background-color: #374151 !important;
+  border-color: #4b5563 !important;
+}
+
+/* Placeholder text */
+input::placeholder,
+textarea::placeholder {
+  color: #9ca3af !important;
+}
+
+.dark input::placeholder,
+.dark textarea::placeholder {
+  color: #6b7280 !important;
+}
