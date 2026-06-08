@@ -278,13 +278,13 @@ const sendEmail = async (req, res) => {
  * Receive email (webhook from Resend)
  * POST /api/email/webhook/receive
  */
-// In receiveEmail function, after getting the email payload, fetch the full email content
+// In your emailController.js
 
 const receiveEmail = async (req, res) => {
   try {
     const payload = req.body;
     const emailPayload = payload.data || payload;
-    const { to, from, subject, email_id } = emailPayload; // Note: email_id is from Resend
+    const { to, from, subject, email_id } = emailPayload; // ← Capture email_id
 
     const toEmail = Array.isArray(to) ? to[0] : to;
 
@@ -330,27 +330,39 @@ const receiveEmail = async (req, res) => {
       });
     }
 
-    // Verify webhook signature (your existing code)...
+    // Verify webhook signature if configured (your existing code)
+    if (resendConfig.webhookSecret) {
+      const wh = new Webhook(resendConfig.webhookSecret);
+      try {
+        wh.verify(JSON.stringify(req.body), {
+          'svix-id': req.headers['svix-id'],
+          'svix-timestamp': req.headers['svix-timestamp'],
+          'svix-signature': req.headers['svix-signature'],
+        });
+      } catch (err) {
+        console.error('Webhook signature verification failed for domain:', resendConfig.domain);
+        return res.status(401).json({
+          success: false,
+          message: 'Invalid webhook signature'
+        });
+      }
+    }
 
     // ========== FETCH FULL EMAIL CONTENT FROM RESEND ==========
+    // Webhooks contain metadata only - you must call the Receiving API to get the body [citation:1][citation:6][citation:9]
     let emailHtml = '';
     let emailText = '';
     
     if (email_id) {
       const resend = new Resend(resendConfig.apiKey);
       try {
-        // Fetch the email by ID from Resend
-        const { data: emailData, error: fetchError } = await resend.emails.get(email_id);
+        // This is the critical API call that retrieves the actual email body [citation:1]
+        const { data: emailData, error: fetchError } = await resend.emails.receiving.get(email_id);
         
         if (!fetchError && emailData) {
-          // Resend returns HTML and text content
           emailHtml = emailData.html || '';
           emailText = emailData.text || '';
-          
-          // Also get any attachments if needed
-          if (emailData.attachments && emailData.attachments.length > 0) {
-            // Process attachments from emailData
-          }
+          console.log(`✅ Successfully fetched email body for ${email_id}`);
         } else {
           console.error('Failed to fetch email content:', fetchError);
         }
@@ -359,58 +371,95 @@ const receiveEmail = async (req, res) => {
       }
     }
 
-    // If fetching failed, try to get from webhook payload (might have limited data)
-    if (!emailHtml && !emailText) {
-      emailHtml = emailPayload.html || '';
-      emailText = emailPayload.text || '';
-    }
-
-    // Process attachments from the fetched email or webhook
+    // Process attachments (if any)
     const processedAttachments = [];
-    const attachments = emailPayload.attachments || [];
-    
-    for (const attachment of attachments) {
-      if (attachment.url) {
-        processedAttachments.push({
-          filename: attachment.filename || attachment.name,
-          originalName: attachment.filename || attachment.name,
-          url: attachment.url,
-          publicId: null,
-          fileSize: attachment.size || 0,
-          mimeType: attachment.mimetype || attachment.type || 'application/octet-stream',
-          cid: attachment.cid || null
-        });
+    if (emailPayload.attachments && emailPayload.attachments.length > 0) {
+      for (const attachment of emailPayload.attachments) {
+        if (attachment.url) {
+          processedAttachments.push({
+            filename: attachment.filename || attachment.name,
+            originalName: attachment.filename || attachment.name,
+            url: attachment.url,
+            publicId: null,
+            fileSize: attachment.size || 0,
+            mimeType: attachment.mimetype || attachment.type || 'application/octet-stream',
+            cid: attachment.cid || null
+          });
+        }
       }
     }
 
-    // Save received email to DB
-    const emailId = uuidv4();
+    // Save received email to DB with the fetched content
+    const emailUuid = uuidv4();
     const receivedEmail = new Email({
       userId: user._id,
       customEmailId: customEmail._id,
       direction: 'received',
-      emailId,
+      emailId: emailUuid,
       from: {
         email: typeof from === 'object' ? from.email : from,
         name: typeof from === 'object' ? from.name : null
       },
       to: [{ email: toEmail, name: null }],
       subject: subject || '(No Subject)',
-      content: emailHtml || emailText || '',
+      content: emailHtml || emailText || '', // ← Now contains the actual email body!
       contentType: emailHtml ? 'html' : 'text',
       attachments: processedAttachments,
       status: 'received',
       receivedAt: new Date(),
       webhookData: req.body,
-      resendEmailId: email_id // Store the Resend email ID for reference
+      resendEmailId: email_id // Store for reference
     });
 
     await receivedEmail.save();
 
-    // Rest of your existing code (notify user, forward email, etc.)...
-    
+    // Notify user about new email (your existing code)
+    const preview = (emailHtml || emailText || '')
+      .replace(/<[^>]*>/g, '')
+      .substring(0, 100);
+
+    await notifyNewEmail(user._id, {
+      from: typeof from === 'object' ? from.email : from,
+      subject: subject || '(No Subject)',
+      preview,
+      id: emailUuid
+    });
+
+    // Forward to user's forward email if set (your existing code)
+    if (customEmail.forwardToEmail && resendConfig.isVerified) {
+      const resend = new Resend(resendConfig.apiKey);
+      try {
+        await resend.emails.send({
+          from: toEmail,
+          to: customEmail.forwardToEmail,
+          subject: `Fwd: ${subject || '(No Subject)'}`,
+          html: `
+            <div style="font-family: Arial, sans-serif;">
+              <p><strong>From:</strong> ${typeof from === 'object' ? from.email : from}</p>
+              <p><strong>To:</strong> ${toEmail}</p>
+              <p><strong>Subject:</strong> ${subject || '(No Subject)'}</p>
+              <hr />
+              ${emailHtml || `<p>${emailText}</p>` || ''}
+            </div>
+          `
+        });
+      } catch (forwardError) {
+        console.error('Email forwarding failed:', forwardError.message);
+      }
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'Email received and stored'
+    });
+
   } catch (error) {
-    // Error handling...
+    console.error('Receive email error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error processing received email',
+      error: error.message
+    });
   }
 };
 
