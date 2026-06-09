@@ -22,3 +22,8 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+
+# In your .gitignore
+android/app/google-services.json
+*.json

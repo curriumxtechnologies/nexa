@@ -48,7 +48,8 @@ const TeamAccess = () => {
   const [revokeUserAccess] = useRevokeUserAccessMutation();
 
   const domains = domainsData?.data || [];
-  const accessUsers = accessData?.data || [];
+  // FIX: Ensure accessUsers is always an array
+  const accessUsers = Array.isArray(accessData?.data) ? accessData.data : [];
 
   // Check if email exists in the system (simple debounced check)
   const checkEmailExists = useMemo(() => {
@@ -153,11 +154,13 @@ const TeamAccess = () => {
     }
   };
 
-  // Filter team members
-  const filteredMembers = accessUsers.filter(member =>
-    member.user?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    member.user?.email?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  // FIX: Safely filter team members with null check
+  const filteredMembers = Array.isArray(accessUsers) && accessUsers.length > 0 
+    ? accessUsers.filter(member =>
+        member?.user?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        member?.user?.email?.toLowerCase().includes(searchTerm.toLowerCase())
+      )
+    : [];
 
   if (domainsLoading) {
     return (

@@ -129,8 +129,10 @@ router.delete("/custom-emails/:emailId", deleteCustomEmail);
 router.post("/send", uploadAttachments.array("attachments", 10), sendEmail);
 
 // ==================== EMAIL RETRIEVAL ROUTES ====================
+// ==================== EMAIL RETRIEVAL ROUTES ====================
 router.get("/inbox", getInbox);
 router.get("/sent", getSentEmails);
+router.get("/stats", getEmailStats);
 router.get("/:emailId", getEmailById);
 
 // ==================== SINGLE EMAIL ACTIONS ====================
@@ -149,7 +151,5 @@ router.post("/bulk/restore", bulkRestoreFromTrash);
 router.post("/bulk/star", bulkToggleStar);
 router.delete("/trash/empty", emptyTrash);
 
-// ==================== STATISTICS ROUTE ====================
-router.get("/stats", getEmailStats);
 
 export default router;
