@@ -6,6 +6,7 @@ import TeamAccess from '../models/teamAccessModel.js';
 import { Resend } from 'resend';
 import { v4 as uuidv4 } from 'uuid';
 import { Webhook } from 'svix';
+import { notifyNewEmail} from './notificationsController.js';
 
 // ==================== HELPER FUNCTIONS ====================
 
@@ -64,40 +65,40 @@ const sendEmailNotification = async (to, subject, html) => {
   }
 };
 
-// Notify user about new email
-const notifyNewEmail = async (userId, emailData) => {
-  try {
-    const user = await User.findById(userId);
-    if (!user) return;
+// // Notify user about new email
+// const notifyNewEmail = async (userId, emailData) => {
+//   try {
+//     const user = await User.findById(userId);
+//     if (!user) return;
 
-    if (user.notificationPreferences?.email?.newEmail) {
-      await sendEmailNotification(
-        user.email,
-        `New Email: ${emailData.subject}`,
-        `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-            <h2 style="color: #7b3eff;">New Email Received</h2>
-            <p><strong>From:</strong> ${emailData.from}</p>
-            <p><strong>Subject:</strong> ${emailData.subject}</p>
-            <p><strong>Preview:</strong> ${emailData.preview}</p>
-            <div style="text-align: center; margin: 30px 0;">
-              <a href="${process.env.FRONTEND_URL}/inbox" style="background-color: #7b3eff; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px;">View in Inbox</a>
-            </div>
-            <hr />
-            <p style="color: #666; font-size: 12px;">Nexa - Email Communication Reimagined</p>
-          </div>
-        `
-      );
-    }
+//     if (user.notificationPreferences?.email?.newEmail) {
+//       await sendEmailNotification(
+//         user.email,
+//         `New Email: ${emailData.subject}`,
+//         `
+//           <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+//             <h2 style="color: #7b3eff;">New Email Received</h2>
+//             <p><strong>From:</strong> ${emailData.from}</p>
+//             <p><strong>Subject:</strong> ${emailData.subject}</p>
+//             <p><strong>Preview:</strong> ${emailData.preview}</p>
+//             <div style="text-align: center; margin: 30px 0;">
+//               <a href="${process.env.FRONTEND_URL}/inbox" style="background-color: #7b3eff; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px;">View in Inbox</a>
+//             </div>
+//             <hr />
+//             <p style="color: #666; font-size: 12px;">Nexa - Email Communication Reimagined</p>
+//           </div>
+//         `
+//       );
+//     }
 
-    // Push notification would go here
-    if (user.notificationPreferences?.push?.newEmail) {
-      console.log('Would send push notification for new email');
-    }
-  } catch (error) {
-    console.error('Notify new email error:', error);
-  }
-};
+//     // Push notification would go here
+//     if (user.notificationPreferences?.push?.newEmail) {
+//       console.log('Would send push notification for new email');
+//     }
+//   } catch (error) {
+//     console.error('Notify new email error:', error);
+//   }
+// };
 
 // ==================== SEND EMAIL ====================
 
@@ -284,7 +285,7 @@ const receiveEmail = async (req, res) => {
   try {
     const payload = req.body;
     const emailPayload = payload.data || payload;
-    const { to, from, subject, email_id } = emailPayload; // ← Capture email_id
+    const { to, from, subject, email_id } = emailPayload;
 
     const toEmail = Array.isArray(to) ? to[0] : to;
 
@@ -330,7 +331,7 @@ const receiveEmail = async (req, res) => {
       });
     }
 
-    // Verify webhook signature if configured (your existing code)
+    // Verify webhook signature if user has configured a webhook secret
     if (resendConfig.webhookSecret) {
       const wh = new Webhook(resendConfig.webhookSecret);
       try {
@@ -346,17 +347,17 @@ const receiveEmail = async (req, res) => {
           message: 'Invalid webhook signature'
         });
       }
+    } else {
+      console.warn(`No webhook secret configured for domain: ${resendConfig.domain}. Skipping signature verification.`);
     }
 
     // ========== FETCH FULL EMAIL CONTENT FROM RESEND ==========
-    // Webhooks contain metadata only - you must call the Receiving API to get the body [citation:1][citation:6][citation:9]
     let emailHtml = '';
     let emailText = '';
     
     if (email_id) {
       const resend = new Resend(resendConfig.apiKey);
       try {
-        // This is the critical API call that retrieves the actual email body [citation:1]
         const { data: emailData, error: fetchError } = await resend.emails.receiving.get(email_id);
         
         if (!fetchError && emailData) {
@@ -371,7 +372,7 @@ const receiveEmail = async (req, res) => {
       }
     }
 
-    // Process attachments (if any)
+    // Process attachments
     const processedAttachments = [];
     if (emailPayload.attachments && emailPayload.attachments.length > 0) {
       for (const attachment of emailPayload.attachments) {
@@ -389,7 +390,7 @@ const receiveEmail = async (req, res) => {
       }
     }
 
-    // Save received email to DB with the fetched content
+    // Save received email to DB
     const emailUuid = uuidv4();
     const receivedEmail = new Email({
       userId: user._id,
@@ -402,18 +403,18 @@ const receiveEmail = async (req, res) => {
       },
       to: [{ email: toEmail, name: null }],
       subject: subject || '(No Subject)',
-      content: emailHtml || emailText || '', // ← Now contains the actual email body!
+      content: emailHtml || emailText || '',
       contentType: emailHtml ? 'html' : 'text',
       attachments: processedAttachments,
       status: 'received',
       receivedAt: new Date(),
       webhookData: req.body,
-      resendEmailId: email_id // Store for reference
+      resendEmailId: email_id
     });
 
     await receivedEmail.save();
 
-    // Notify user about new email (your existing code)
+    // ========== SEND NOTIFICATIONS ==========
     const preview = (emailHtml || emailText || '')
       .replace(/<[^>]*>/g, '')
       .substring(0, 100);
@@ -425,7 +426,7 @@ const receiveEmail = async (req, res) => {
       id: emailUuid
     });
 
-    // Forward to user's forward email if set (your existing code)
+    // Forward to user's forward email if set
     if (customEmail.forwardToEmail && resendConfig.isVerified) {
       const resend = new Resend(resendConfig.apiKey);
       try {
