@@ -7,7 +7,7 @@ import {
   getProfile,
   updateProfile,
   changePassword,
-  toggleTwoFactor,
+  toggleTwoFactor,  // ✅ Only here
   deleteAccount
 } from "../controllers/userController.js";
 
@@ -26,22 +26,8 @@ const profilePictureStorage = new CloudinaryStorage({
   params: {
     folder: "nexa_user_profiles",
     allowed_formats: [
-      "jpg",
-      "jpeg",
-      "png",
-      "webp",
-      "avif",
-      "heic",
-      "heif",
-      "gif",
-      "bmp",
-      "tif",
-      "tiff",
-      "svg",
-      "ico",
-      "apng",
-      "jfif",
-      "dng",
+      "jpg", "jpeg", "png", "webp", "avif", "heic", "heif", "gif",
+      "bmp", "tif", "tiff", "svg", "ico", "apng", "jfif", "dng",
     ],
     transformation: [{ width: 500, height: 500, crop: "fill", gravity: "face" }],
   },
@@ -49,7 +35,7 @@ const profilePictureStorage = new CloudinaryStorage({
 
 const uploadProfilePicture = multer({ storage: profilePictureStorage });
 
-// Optional: test connection
+// Test connection
 cloudinary.api
   .ping()
   .then(() => console.log("✅ Cloudinary connected successfully for user profiles"))
@@ -62,7 +48,7 @@ router.use(protect);
 router.get("/profile", getProfile);
 router.put("/profile", uploadProfilePicture.single("profilePicture"), updateProfile);
 router.put("/change-password", changePassword);
-router.put("/toggle-2fa", toggleTwoFactor);
+router.put("/toggle-2fa", toggleTwoFactor);  // ✅ Keep only here
 router.delete("/account", deleteAccount);
 
 export default router;

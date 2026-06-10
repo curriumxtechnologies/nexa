@@ -7,7 +7,6 @@ import {
   verifyTwoFactorOTP,
   forgotPassword,
   resetPassword,
-  toggleTwoFactor,
 } from "../controllers/authController.js";
 import { protect } from "../middleware/authMiddleware.js";
 import multer from "multer";
@@ -29,22 +28,8 @@ const storage = new CloudinaryStorage({
   params: {
     folder: "nexa_profile_pictures",
     allowed_formats: [
-      "jpg",
-      "jpeg",
-      "png",
-      "webp",
-      "avif",
-      "heic",
-      "heif",
-      "gif",
-      "bmp",
-      "tif",
-      "tiff",
-      "svg",
-      "ico",
-      "apng",
-      "jfif",
-      "dng",
+      "jpg", "jpeg", "png", "webp", "avif", "heic", "heif", "gif", 
+      "bmp", "tif", "tiff", "svg", "ico", "apng", "jfif", "dng",
     ],
     transformation: [{ width: 500, height: 500, crop: "fill", gravity: "face" }],
   },
@@ -52,13 +37,13 @@ const storage = new CloudinaryStorage({
 
 const upload = multer({ storage });
 
-// Optional: test connection
+// Test connection
 cloudinary.api
   .ping()
   .then(() => console.log("✅ Cloudinary connected successfully"))
   .catch((err) => console.error("❌ Cloudinary not connected:", err.message));
 
-// Auth routes
+// Public auth routes (no auth required)
 router.post("/register", upload.single("profilePicture"), register);
 router.post("/verify-email", verifyEmailOTP);
 router.post("/resend-verification", resendVerificationOTP);
@@ -66,13 +51,28 @@ router.post("/login", login);
 router.post("/verify-2fa", verifyTwoFactorOTP);
 router.post("/forgot-password", forgotPassword);
 router.post("/reset-password", resetPassword);
-router.post("/toggle-2fa", protect, toggleTwoFactor);
-router.get("/profile", protect, (req, res) => {
-  res.json({
-    success: true,
-    message: "Profile accessed",
-    user: req.user,
-  });
+
+// Protected routes (auth required)
+router.get("/profile", protect, async (req, res) => {
+  try {
+    const user = await User.findById(req.userId).select('-password -otp -twoFactorOTP -resetPasswordOTP');
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+    res.json({
+      success: true,
+      data: user,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching profile',
+      error: error.message
+    });
+  }
 });
 
 export default router;

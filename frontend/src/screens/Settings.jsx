@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { useGetSettingsQuery, useUpdateSettingsMutation, useUpdateEmailSignatureMutation, useToggleDarkModeMutation } from '../slices/settingsApiSlice';
 import { useGetNotificationPreferencesQuery, useUpdateEmailNotificationsMutation, useUpdatePushNotificationsMutation, useSendTestEmailMutation, useSendTestPushMutation } from '../slices/notificationsApiSlice';
-import { useToggleUser2FAMutation, useDeleteAccountMutation } from '../slices/userApiSlice';
+import { useToggleTwoFactorMutation, useDeleteAccountMutation, useGetProfileQuery } from '../slices/userApiSlice';
 import { usePushNotifications } from '../hooks/usePushNotifications';
 import { useMobilePushNotifications } from '../hooks/useMobilePushNotifications';
 import { logout } from '../slices/authSlice';
@@ -100,6 +100,7 @@ const DeleteAccountModal = ({ isOpen, onClose, onDelete, isDeleting }) => {
 // ==================== SETTINGS HOOK ====================
 
 const useSettings = () => {
+  const dispatch = useDispatch();
   const { userInfo } = useSelector((state) => state.auth);
   
   // Settings API
@@ -115,8 +116,9 @@ const useSettings = () => {
   const [sendTestEmail, { isLoading: isSendingTestEmail }] = useSendTestEmailMutation();
   const [sendTestPush, { isLoading: isSendingTestPush }] = useSendTestPushMutation();
   
-  // User API
-  const [toggle2FA, { isLoading: isToggling2FA }] = useToggleUser2FAMutation();
+  // User API - Add getProfile query to fetch latest 2FA status
+  const { data: profileData, refetch: refetchProfile } = useGetProfileQuery();
+  const [toggleTwoFactor, { isLoading: isToggling2FA }] = useToggleTwoFactorMutation();
   const [deleteAccount, { isLoading: isDeleting }] = useDeleteAccountMutation();
   
   // Push notification hooks - detect platform
@@ -150,7 +152,7 @@ const useSettings = () => {
   });
   
   const [emailSignature, setEmailSignature] = useState('');
-  const [twoFactorEnabled, setTwoFactorEnabled] = useState(userInfo?.isTwoFactorEnabled || false);
+  const [twoFactorEnabled, setTwoFactorEnabled] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deletePassword, setDeletePassword] = useState('');
   const [deleteError, setDeleteError] = useState('');
@@ -198,6 +200,15 @@ const useSettings = () => {
       });
     }
   }, [notificationsData]);
+
+  // Load 2FA status from profile API (this ensures latest status)
+  useEffect(() => {
+    if (profileData?.data?.isTwoFactorEnabled !== undefined) {
+      setTwoFactorEnabled(profileData.data.isTwoFactorEnabled);
+    } else if (userInfo?.isTwoFactorEnabled !== undefined) {
+      setTwoFactorEnabled(userInfo.isTwoFactorEnabled);
+    }
+  }, [profileData, userInfo]);
 
   // Keep push notification enabled state in sync with subscription
   useEffect(() => {
@@ -264,8 +275,10 @@ const useSettings = () => {
 
   const handleToggle2FA = async () => {
     try {
-      await toggle2FA({ enable: !twoFactorEnabled }).unwrap();
+      const result = await toggleTwoFactor({ enable: !twoFactorEnabled }).unwrap();
       setTwoFactorEnabled(!twoFactorEnabled);
+      // Refetch profile to update the status
+      await refetchProfile();
       setSuccess(`2FA ${!twoFactorEnabled ? 'enabled' : 'disabled'} successfully`);
       setTimeout(() => setSuccess(''), 3000);
     } catch (err) {

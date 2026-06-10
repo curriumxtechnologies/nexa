@@ -24,6 +24,13 @@ const teamAccessSchema = new mongoose.Schema({
     ref: 'User',
     required: true
   },
+  // Store email for reference when user doesn't exist yet
+  invitedEmail: {
+    type: String,
+    required: true,
+    lowercase: true,
+    trim: true
+  },
   // Access level
   accessLevel: {
     type: String,
@@ -65,7 +72,7 @@ const teamAccessSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['pending', 'active', 'revoked'],
+    enum: ['pending', 'active', 'revoked', 'declined'],
     default: 'pending'
   },
   invitationToken: {
@@ -77,6 +84,10 @@ const teamAccessSchema = new mongoose.Schema({
     default: null
   },
   acceptedAt: {
+    type: Date,
+    default: null
+  },
+  declinedAt: {
     type: Date,
     default: null
   },
@@ -97,7 +108,8 @@ teamAccessSchema.index({ ownerId: 1 });
 teamAccessSchema.index({ userId: 1 });
 teamAccessSchema.index({ resendConfigId: 1 });
 teamAccessSchema.index({ invitationToken: 1 });
-teamAccessSchema.index({ ownerId: 1, userId: 1, resendConfigId: 1 }, { unique: true });
+teamAccessSchema.index({ invitedEmail: 1 });
+teamAccessSchema.index({ ownerId: 1, userId: 1, resendConfigId: 1 }, { unique: true, sparse: true });
 
 const TeamAccess = mongoose.model('TeamAccess', teamAccessSchema);
 

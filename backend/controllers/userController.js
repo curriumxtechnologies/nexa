@@ -3,10 +3,10 @@ import bcrypt from 'bcryptjs';
 import { v4 as uuidv4 } from 'uuid';
 
 // Get user profile
+// Already correct - it selects everything except password and OTPs
 const getProfile = async (req, res) => {
   try {
     const userId = req.userId;
-
     const user = await User.findById(userId).select('-password -otp -twoFactorOTP -resetPasswordOTP');
     
     if (!user) {
@@ -15,6 +15,13 @@ const getProfile = async (req, res) => {
         message: 'User not found'
       });
     }
+
+    // Log for debugging
+    console.log('📊 User profile fetched:', {
+      email: user.email,
+      isEmailVerified: user.isEmailVerified,
+      isTwoFactorEnabled: user.isTwoFactorEnabled
+    });
 
     res.status(200).json({
       success: true,
@@ -32,10 +39,13 @@ const getProfile = async (req, res) => {
 };
 
 // Update user profile
+// controllers/userController.js - update the updateProfile function
 const updateProfile = async (req, res) => {
   try {
     const userId = req.userId;
     const { name, phoneNumber } = req.body;
+
+    console.log('📝 Updating profile for user:', userId);
 
     const user = await User.findById(userId);
     if (!user) {
@@ -51,6 +61,24 @@ const updateProfile = async (req, res) => {
 
     // Update profile picture if provided
     if (req.file) {
+      console.log('📸 Updating profile picture:', req.file.filename);
+      
+      // Optional: Delete old profile picture from Cloudinary
+      if (user.profilePicture?.publicId) {
+        try {
+          const cloudinary = (await import('cloudinary')).v2;
+          cloudinary.config({
+            cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+            api_key: process.env.CLOUDINARY_API_KEY,
+            api_secret: process.env.CLOUDINARY_API_SECRET,
+          });
+          await cloudinary.uploader.destroy(user.profilePicture.publicId);
+          console.log('🗑️ Deleted old profile picture:', user.profilePicture.publicId);
+        } catch (err) {
+          console.error('Failed to delete old picture:', err);
+        }
+      }
+
       user.profilePicture = {
         url: req.file.path,
         publicId: req.file.filename,
@@ -61,6 +89,7 @@ const updateProfile = async (req, res) => {
     }
 
     await user.save();
+    console.log('✅ Profile updated successfully');
 
     // Return user without sensitive data
     const userData = {
@@ -149,10 +178,15 @@ const changePassword = async (req, res) => {
 };
 
 // Enable/Disable 2FA
+// In authController.js - remove toggleTwoFactor (keep only in userController)
+// Make sure userController.js has the correct implementation:
+
 const toggleTwoFactor = async (req, res) => {
   try {
     const userId = req.userId;
     const { enable } = req.body;
+
+    console.log('🔐 Toggling 2FA for user:', userId, 'to:', enable);
 
     const user = await User.findById(userId);
     if (!user) {
@@ -164,6 +198,8 @@ const toggleTwoFactor = async (req, res) => {
 
     user.isTwoFactorEnabled = enable;
     await user.save();
+
+    console.log('✅ 2FA toggled successfully. New status:', user.isTwoFactorEnabled);
 
     res.status(200).json({
       success: true,

@@ -30,7 +30,7 @@ export const userApiSlice = apiSlice.injectEndpoints({
             }),
         }),
 
-        toggleUser2FA: builder.mutation({
+        toggleTwoFactor: builder.mutation({  // Renamed from toggleUser2FA to match backend
             query: (data) => ({
                 url: `${USER_URL}/toggle-2fa`,
                 method: 'PUT',
@@ -54,6 +54,6 @@ export const {
     useGetProfileQuery,
     useUpdateProfileMutation,
     useChangePasswordMutation,
-    useToggleUser2FAMutation,
+    useToggleTwoFactorMutation,  // Updated name
     useDeleteAccountMutation,
 } = userApiSlice;

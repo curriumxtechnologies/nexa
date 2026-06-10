@@ -24,6 +24,7 @@ import Settings from "./screens/Settings.jsx";
 import Stats from "./screens/Stats.jsx";
 import CustomEmails from "./screens/CustomEmails.jsx";
 import EmailDetails from "./screens/EmailDetails.jsx";
+import AcceptInvite from "./screens/AcceptInvite.jsx";
 import PrivateRoute from "./components/PrivateRoute.jsx";
 
 import { useMobilePushNotifications } from './hooks/useMobilePushNotifications';
@@ -59,7 +60,7 @@ const router = createBrowserRouter([
       { path: "login", element: <Login /> },
       { path: "register", element: <Register /> },
       { path: "verify-email", element: <VerifyEmail /> },
-      
+      { path: "accept-invitation/:token", element: <AcceptInvite /> },
       // Protected routes wrapped with PrivateRoute
       {
         element: <PrivateRoute />,

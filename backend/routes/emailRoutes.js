@@ -95,6 +95,9 @@ cloudinary.api
 // ==================== PUBLIC WEBHOOK ROUTE (NO AUTH) ====================
 router.post("/webhook/receive", receiveEmail);
 
+//Accept Inviation
+router.post("/team/accept/:token", acceptInvitation);
+
 // ==================== PROTECTED ROUTES (AUTH REQUIRED) ====================
 router.use(protect);
 
@@ -109,7 +112,6 @@ router.put("/webhook/secret/:resendConfigId", updateWebhookSecret);
 
 // ==================== TEAM ACCESS ROUTES ====================
 router.post("/team/invite", inviteUserToDomain);
-router.post("/team/accept/:token", acceptInvitation);
 router.post("/team/decline/:token", declineInvitation);
 router.post("/team/resend/:accessId", resendInvitation);
 router.get("/team/access/:resendConfigId", getDomainAccessUsers);

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { useGetCustomEmailsQuery, useCreateCustomEmailMutation } from '../slices/emailApiSlice';
+import { useSelector } from 'react-redux';
+import { useGetCustomEmailsQuery, useCreateCustomEmailMutation, useGetAccessibleDomainsQuery } from '../slices/emailApiSlice';
 import { 
   Mail, 
   Plus, 
@@ -17,11 +18,14 @@ import {
   Camera,
   ChevronRight,
   Settings,
-  Eye
+  Eye,
+  Lock,
+  Shield
 } from 'lucide-react';
 import { format } from 'date-fns';
 
 const CustomEmails = () => {
+  const { userInfo } = useSelector((state) => state.auth);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showDetailsModal, setShowDetailsModal] = useState(null);
   const [username, setUsername] = useState('');
@@ -38,10 +42,44 @@ const CustomEmails = () => {
   const [selectedResendConfigId, setSelectedResendConfigId] = useState('');
 
   const { data, isLoading, refetch } = useGetCustomEmailsQuery();
+  const { data: accessibleDomainsData } = useGetAccessibleDomainsQuery();
   const [createCustomEmail] = useCreateCustomEmailMutation();
 
   const domains = data?.data?.domains || [];
   const customEmails = data?.data?.emails || [];
+  const accessibleDomains = accessibleDomainsData?.data || [];
+
+  // Check if user has permission to create custom emails
+  const canCreateCustomEmails = () => {
+    // Owner can always create
+    if (domains.length > 0) return true;
+    
+    // Check team access for create permission
+    const hasCreatePermission = accessibleDomains.some(domain => 
+      domain.permissions?.canCreateCustomEmails === true
+    );
+    
+    return hasCreatePermission;
+  };
+
+  // Check if user has permission to delete custom emails
+  const canDeleteCustomEmails = (email) => {
+    // Owner can delete their own emails
+    if (email.userId === userInfo?._id) return true;
+    
+    // Check team access for delete permission
+    const hasDeletePermission = accessibleDomains.some(domain => 
+      domain.permissions?.canDeleteCustomEmails === true &&
+      domain.domain === email.domain
+    );
+    
+    return hasDeletePermission;
+  };
+
+  // Check if email is from team domain (not owned by user)
+  const isTeamEmail = (email) => {
+    return email.userId !== userInfo?._id;
+  };
 
   const handleFileChange = (e) => {
     const file = e.target.files[0];
@@ -113,6 +151,8 @@ const CustomEmails = () => {
       setShowCreateModal(false);
       
       refetch();
+      setSuccess('Custom email created successfully!');
+      setTimeout(() => setSuccess(''), 3000);
     } catch (err) {
       setError(err.data?.message || 'Failed to create custom email');
     } finally {
@@ -126,6 +166,34 @@ const CustomEmails = () => {
     setTimeout(() => setCopiedId(null), 2000);
   };
 
+  const getPermissionBadge = () => {
+    if (domains.length > 0) {
+      return (
+        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-700">
+          <Shield className="w-3 h-3 mr-1" />
+          Owner
+        </span>
+      );
+    }
+    
+    const teamDomain = accessibleDomains[0];
+    if (teamDomain?.permissions?.canCreateCustomEmails) {
+      return (
+        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">
+          <CheckCircle className="w-3 h-3 mr-1" />
+          Can Create
+        </span>
+      );
+    }
+    
+    return (
+      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
+        <Lock className="w-3 h-3 mr-1" />
+        View Only
+      </span>
+    );
+  };
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
@@ -136,6 +204,9 @@ const CustomEmails = () => {
       </div>
     );
   }
+
+  const hasCreatePermission = canCreateCustomEmails();
+  const availableDomains = [...domains, ...accessibleDomains.filter(d => d.permissions?.canCreateCustomEmails)];
 
   return (
     <div className="min-h-screen bg-gray-50 pb-20 lg:pb-0">
@@ -152,16 +223,29 @@ const CustomEmails = () => {
                 <p className="text-xs text-gray-400 hidden lg:block">Manage your custom email addresses</p>
               </div>
             </div>
-            <button
-              onClick={() => setShowCreateModal(true)}
-              disabled={domains.length === 0}
-              className="flex items-center space-x-1.5 px-3 py-1.5 bg-purple-600 text-white text-sm rounded-lg hover:bg-purple-700 transition shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Create Email</span>
-            </button>
+            <div className="flex items-center space-x-2">
+              {getPermissionBadge()}
+              {hasCreatePermission && (
+                <button
+                  onClick={() => setShowCreateModal(true)}
+                  disabled={availableDomains.length === 0}
+                  className="flex items-center space-x-1.5 px-3 py-1.5 bg-purple-600 text-white text-sm rounded-lg hover:bg-purple-700 transition shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Create Email</span>
+                </button>
+              )}
+            </div>
           </div>
-          {domains.length === 0 && (
+          {!hasCreatePermission && customEmails.length > 0 && (
+            <div className="mt-2 p-2 bg-blue-50 rounded-lg">
+              <p className="text-xs text-blue-700 flex items-center space-x-1">
+                <Lock className="w-3 h-3" />
+                <span>You have view-only access to these emails. Contact your team admin to create custom emails.</span>
+              </p>
+            </div>
+          )}
+          {availableDomains.length === 0 && hasCreatePermission && (
             <div className="mt-2 p-2 bg-yellow-50 rounded-lg">
               <p className="text-xs text-yellow-700 flex items-center space-x-1">
                 <AlertCircle className="w-3 h-3" />
@@ -180,8 +264,12 @@ const CustomEmails = () => {
               <Mail className="w-8 h-8 text-gray-400" />
             </div>
             <p className="text-gray-500 font-medium">No custom emails created yet</p>
-            <p className="text-gray-400 text-sm mt-1">Create your first custom email address</p>
-            {domains.length > 0 && (
+            <p className="text-gray-400 text-sm mt-1">
+              {hasCreatePermission 
+                ? 'Create your first custom email address'
+                : 'You do not have permission to create custom emails'}
+            </p>
+            {hasCreatePermission && availableDomains.length > 0 && (
               <button
                 onClick={() => setShowCreateModal(true)}
                 className="mt-4 px-4 py-2 bg-purple-600 text-white text-sm rounded-lg hover:bg-purple-700 transition"
@@ -204,7 +292,7 @@ const CustomEmails = () => {
             {customEmails.map((email) => (
               <div
                 key={email._id}
-                className="bg-white border border-gray-100 rounded-lg lg:rounded-none lg:border-x-0 lg:border-t-0 hover:bg-gray-50/50 transition"
+                className={`bg-white border border-gray-100 rounded-lg lg:rounded-none lg:border-x-0 lg:border-t-0 hover:bg-gray-50/50 transition ${isTeamEmail(email) ? 'border-l-4 border-l-indigo-400' : ''}`}
               >
                 <div className="p-4 lg:grid lg:grid-cols-12 lg:gap-4 lg:items-center lg:p-3">
                   {/* Email Info */}
@@ -229,6 +317,11 @@ const CustomEmails = () => {
                           {email.isDefault && (
                             <span className="px-1.5 py-0.5 text-[10px] bg-green-100 text-green-700 rounded-full">
                               Default
+                            </span>
+                          )}
+                          {isTeamEmail(email) && (
+                            <span className="px-1.5 py-0.5 text-[10px] bg-indigo-100 text-indigo-700 rounded-full">
+                              Team
                             </span>
                           )}
                         </div>
@@ -271,6 +364,20 @@ const CustomEmails = () => {
                       >
                         <Eye className="w-4 h-4" />
                       </button>
+                      {canDeleteCustomEmails(email) && (
+                        <button
+                          onClick={() => {
+                            if (window.confirm(`Are you sure you want to delete ${email.email}?`)) {
+                              // Call delete mutation here
+                              console.log('Delete:', email.email);
+                            }
+                          }}
+                          className="text-gray-400 hover:text-red-600 transition p-1"
+                          title="Delete Email"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
                     </div>
                     <ChevronRight className="w-4 h-4 text-gray-300 lg:hidden" />
                   </div>
@@ -288,6 +395,12 @@ const CustomEmails = () => {
                       {format(new Date(email.createdAt), 'MMM d, yyyy')}
                     </span>
                   </div>
+                  {isTeamEmail(email) && (
+                    <div className="flex items-center justify-between text-xs mt-1">
+                      <span className="text-gray-500">Type:</span>
+                      <span className="text-indigo-600 text-xs">Team Access</span>
+                    </div>
+                  )}
                   {email.signature && (
                     <div className="mt-2 pt-2 border-t border-gray-50">
                       <p className="text-xs text-gray-500 mb-1">Signature:</p>
@@ -301,8 +414,8 @@ const CustomEmails = () => {
         )}
       </div>
 
-      {/* Create Custom Email Modal - Fixed for mobile */}
-      {showCreateModal && (
+      {/* Create Custom Email Modal - Only shown if user has permission */}
+      {showCreateModal && hasCreatePermission && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-end lg:items-center justify-center z-50 p-0 lg:p-4">
           <div className="bg-white rounded-t-xl lg:rounded-xl shadow-xl w-full max-w-md max-h-[85vh] overflow-y-auto lg:max-h-[90vh]">
             <div className="p-5 sticky top-0 bg-white border-b border-gray-100 z-10">
@@ -337,6 +450,12 @@ const CustomEmails = () => {
               {error && (
                 <div className="p-3 bg-red-50 rounded-lg">
                   <p className="text-sm text-red-600">{error}</p>
+                </div>
+              )}
+
+              {success && (
+                <div className="p-3 bg-green-50 rounded-lg">
+                  <p className="text-sm text-green-600">{success}</p>
                 </div>
               )}
 
@@ -380,9 +499,10 @@ const CustomEmails = () => {
                   required
                 >
                   <option value="">Select a domain</option>
-                  {domains.map((domain) => (
-                    <option key={domain.id} value={domain.id}>
+                  {availableDomains.map((domain) => (
+                    <option key={domain.id || domain.resendConfigId} value={domain.id || domain.resendConfigId}>
                       {domain.domain}
+                      {domain.permissions?.canCreateCustomEmails && !domain.owner && ' (Team Access)'}
                     </option>
                   ))}
                 </select>
@@ -404,7 +524,7 @@ const CustomEmails = () => {
                   />
                   <span className="text-gray-500 text-sm">@</span>
                   <span className="text-gray-600 text-sm">
-                    {domains.find(d => d.id === selectedResendConfigId)?.domain || 'domain.com'}
+                    {availableDomains.find(d => (d.id || d.resendConfigId) === selectedResendConfigId)?.domain || 'domain.com'}
                   </span>
                 </div>
               </div>
@@ -505,7 +625,7 @@ const CustomEmails = () => {
         </div>
       )}
 
-      {/* Email Details Modal - Fixed for mobile */}
+      {/* Email Details Modal */}
       {showDetailsModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-end lg:items-center justify-center z-50 p-0 lg:p-4">
           <div className="bg-white rounded-t-xl lg:rounded-xl shadow-xl w-full max-w-md max-h-[85vh] overflow-y-auto">
@@ -558,6 +678,16 @@ const CustomEmails = () => {
                   <span className="text-sm text-gray-500">Created:</span>
                   <span className="text-sm text-gray-700">
                     {format(new Date(showDetailsModal.createdAt), 'MMM d, yyyy')}
+                  </span>
+                </div>
+                <div className="flex justify-between py-2 border-b border-gray-100">
+                  <span className="text-sm text-gray-500">Type:</span>
+                  <span className="text-sm">
+                    {isTeamEmail(showDetailsModal) ? (
+                      <span className="text-indigo-600">Team Access</span>
+                    ) : (
+                      <span className="text-purple-600">Owned</span>
+                    )}
                   </span>
                 </div>
                 <div className="flex justify-between py-2 border-b border-gray-100">

@@ -2,19 +2,92 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 import { useSendEmailMutation, useGetCustomEmailsQuery } from '../slices/emailApiSlice';
-import { 
-  Send, 
-  Paperclip, 
-  X, 
-  Minimize2, 
+import {
+  Send,
+  Paperclip,
+  X,
+  Minimize2,
   Maximize2,
   Loader2,
   AlertCircle,
   CheckCircle,
-  ChevronDown
+  ChevronDown,
+  CornerDownLeft,
+  Tag
 } from 'lucide-react';
 
-const Compose = () => {
+// ─── Defined OUTSIDE the parent so React never remounts it ───────────────────
+const RecipientInput = ({
+  label,
+  emails,
+  inputValue,
+  onInputChange,
+  onKeyDown,
+  onRemove,
+  placeholder,
+  inputRef,
+  show = true,
+  hint,
+}) => {
+  if (!show) return null;
+
+  return (
+    <div>
+      <label className="block text-xs font-medium text-gray-500 mb-1">{label}</label>
+      <div
+        className="flex flex-wrap items-center gap-2 p-2 bg-gray-50 border border-gray-200 rounded-lg focus-within:ring-2 focus-within:ring-purple-400 focus-within:border-transparent cursor-text"
+        onClick={() => inputRef?.current?.focus()}
+      >
+        {emails.map((email, idx) => (
+          <div
+            key={idx}
+            className="flex items-center gap-1 px-2 py-1 bg-purple-100 text-purple-700 rounded-full text-sm"
+          >
+            <span className="max-w-[150px] truncate">{email}</span>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onRemove(email);
+              }}
+              className="hover:bg-purple-200 rounded-full p-0.5"
+            >
+              <X className="w-3 h-3" />
+            </button>
+          </div>
+        ))}
+        <input
+          ref={inputRef}
+          type="text"
+          value={inputValue}
+          onChange={onInputChange}
+          onKeyDown={onKeyDown}
+          placeholder={emails.length === 0 ? placeholder : ''}
+          className="flex-1 min-w-[120px] bg-transparent outline-none text-sm py-1"
+        />
+      </div>
+      {hint && (
+        <div className="flex items-center gap-2 mt-1 text-xs text-gray-400">
+          <CornerDownLeft className="w-3 h-3" />
+          <span>{hint}</span>
+          <span className="mx-1">•</span>
+          <Tag className="w-3 h-3" />
+          <span>Use comma (,) to add multiple</span>
+        </div>
+      )}
+    </div>
+  );
+};
+// ─────────────────────────────────────────────────────────────────────────────
+
+const Compose = ({ 
+  initialTo = '', 
+  initialCc = '', 
+  initialSubject = '', 
+  initialContent = '', 
+  isReply = false,
+  onClose 
+}) => {
   const navigate = useNavigate();
   const { userInfo } = useSelector((state) => state.auth);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -25,15 +98,19 @@ const Compose = () => {
   const { data: customEmailsData } = useGetCustomEmailsQuery();
 
   const customEmails = customEmailsData?.data?.emails || [];
-  const defaultEmail = customEmails.find(e => e.isDefault) || customEmails[0];
+  const defaultEmail = customEmails.find((e) => e.isDefault) || customEmails[0];
+
+  const [toEmails, setToEmails] = useState([]);
+  const [ccEmails, setCcEmails] = useState([]);
+  const [bccEmails, setBccEmails] = useState([]);
+  const [toInput, setToInput] = useState('');
+  const [ccInput, setCcInput] = useState('');
+  const [bccInput, setBccInput] = useState('');
 
   const [emailData, setEmailData] = useState({
-    to: '',
-    cc: '',
-    bcc: '',
     subject: '',
     content: '',
-    customEmailId: ''
+    customEmailId: '',
   });
 
   const [attachments, setAttachments] = useState([]);
@@ -45,12 +122,34 @@ const Compose = () => {
   const fileInputRef = useRef(null);
   const contentRef = useRef(null);
   const dropdownRef = useRef(null);
+  const toInputRef = useRef(null);
+  const ccInputRef = useRef(null);
+  const bccInputRef = useRef(null);
 
-  const selectedEmail = customEmails.find(e => e._id === emailData.customEmailId);
+  const selectedEmail = customEmails.find((e) => e._id === emailData.customEmailId);
+
+  // ── Initialize from props (for replies/forwards) ─────────────────────────
+  useEffect(() => {
+    if (initialTo) {
+      const emails = initialTo.split(',').map(e => e.trim()).filter(Boolean);
+      setToEmails(emails);
+    }
+    if (initialCc) {
+      const emails = initialCc.split(',').map(e => e.trim()).filter(Boolean);
+      setCcEmails(emails);
+      if (emails.length > 0) setShowCc(true);
+    }
+    if (initialSubject) {
+      setEmailData(prev => ({ ...prev, subject: initialSubject }));
+    }
+    if (initialContent) {
+      setEmailData(prev => ({ ...prev, content: initialContent }));
+    }
+  }, [initialTo, initialCc, initialSubject, initialContent]);
 
   useEffect(() => {
     if (defaultEmail && !emailData.customEmailId) {
-      setEmailData(prev => ({ ...prev, customEmailId: defaultEmail._id }));
+      setEmailData((prev) => ({ ...prev, customEmailId: defaultEmail._id }));
     }
   }, [defaultEmail]);
 
@@ -64,45 +163,143 @@ const Compose = () => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const handleToChange = useCallback((e) => {
-    setEmailData(prev => ({ ...prev, to: e.target.value }));
-    setError('');
-  }, []);
+  const isValidEmail = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+
+  const addEmail = (field, input, setInput, setEmails, focusRef) => {
+    const raw = input.trim();
+    if (!raw) return false;
+
+    const parts = raw.includes(',')
+      ? raw.split(',').map((e) => e.trim()).filter(Boolean)
+      : [raw];
+
+    const valid = [];
+    const invalid = [];
+    parts.forEach((e) => (isValidEmail(e) ? valid.push(e.toLowerCase()) : invalid.push(e)));
+
+    if (invalid.length > 0) {
+      setError(`Invalid email: ${invalid.join(', ')}`);
+      setTimeout(() => setError(''), 3000);
+      return false;
+    }
+
+    if (valid.length > 0) {
+      setEmails((prev) => [...new Set([...prev, ...valid])]);
+      setInput('');
+      return true;
+    }
+    return false;
+  };
+
+  // ── TO handlers ────────────────────────────────────────────────────────────
+  const handleToInputChange = (e) => {
+    const value = e.target.value;
+    setToInput(value);
+    if (value.endsWith(',')) {
+      const emailToAdd = value.slice(0, -1).trim();
+      if (emailToAdd) addEmail('to', emailToAdd, setToInput, setToEmails, toInputRef);
+      else setToInput('');
+    }
+  };
+
+  const handleToKeyDown = (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (toInput.trim()) addEmail('to', toInput, setToInput, setToEmails, toInputRef);
+    } else if (e.key === 'Tab' && toInput.trim()) {
+      e.preventDefault();
+      addEmail('to', toInput, setToInput, setToEmails, toInputRef);
+      setTimeout(() => {
+        if (showCc && ccInputRef.current) ccInputRef.current.focus();
+        else if (showBcc && bccInputRef.current) bccInputRef.current.focus();
+        else document.querySelector('input[placeholder="Enter subject"]')?.focus();
+      }, 50);
+    } else if (e.key === 'Backspace' && toInput === '' && toEmails.length > 0) {
+      setToEmails((prev) => prev.slice(0, -1));
+    }
+  };
+
+  const handleToRemove = (email) => {
+    setToEmails((prev) => prev.filter((e) => e !== email));
+  };
+  // ──────────────────────────────────────────────────────────────────────────
+
+  // ── CC handlers ────────────────────────────────────────────────────────────
+  const handleCcInputChange = (e) => {
+    const value = e.target.value;
+    setCcInput(value);
+    if (value.endsWith(',')) {
+      const emailToAdd = value.slice(0, -1).trim();
+      if (emailToAdd) addEmail('cc', emailToAdd, setCcInput, setCcEmails, ccInputRef);
+      else setCcInput('');
+    }
+  };
+
+  const handleCcKeyDown = (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (ccInput.trim()) addEmail('cc', ccInput, setCcInput, setCcEmails, ccInputRef);
+    } else if (e.key === 'Tab' && ccInput.trim()) {
+      e.preventDefault();
+      addEmail('cc', ccInput, setCcInput, setCcEmails, ccInputRef);
+    } else if (e.key === 'Backspace' && ccInput === '' && ccEmails.length > 0) {
+      setCcEmails((prev) => prev.slice(0, -1));
+    }
+  };
+
+  const handleCcRemove = (email) => setCcEmails((prev) => prev.filter((e) => e !== email));
+  // ──────────────────────────────────────────────────────────────────────────
+
+  // ── BCC handlers ───────────────────────────────────────────────────────────
+  const handleBccInputChange = (e) => {
+    const value = e.target.value;
+    setBccInput(value);
+    if (value.endsWith(',')) {
+      const emailToAdd = value.slice(0, -1).trim();
+      if (emailToAdd) addEmail('bcc', emailToAdd, setBccInput, setBccEmails, bccInputRef);
+      else setBccInput('');
+    }
+  };
+
+  const handleBccKeyDown = (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (bccInput.trim()) addEmail('bcc', bccInput, setBccInput, setBccEmails, bccInputRef);
+    } else if (e.key === 'Tab' && bccInput.trim()) {
+      e.preventDefault();
+      addEmail('bcc', bccInput, setBccInput, setBccEmails, bccInputRef);
+    } else if (e.key === 'Backspace' && bccInput === '' && bccEmails.length > 0) {
+      setBccEmails((prev) => prev.slice(0, -1));
+    }
+  };
+
+  const handleBccRemove = (email) => setBccEmails((prev) => prev.filter((e) => e !== email));
+  // ──────────────────────────────────────────────────────────────────────────
 
   const handleSubjectChange = useCallback((e) => {
-    setEmailData(prev => ({ ...prev, subject: e.target.value }));
+    setEmailData((prev) => ({ ...prev, subject: e.target.value }));
     setError('');
   }, []);
 
   const handleContentChange = useCallback((e) => {
-    setEmailData(prev => ({ ...prev, content: e.target.value }));
-    setError('');
-  }, []);
-
-  const handleCcChange = useCallback((e) => {
-    setEmailData(prev => ({ ...prev, cc: e.target.value }));
-    setError('');
-  }, []);
-
-  const handleBccChange = useCallback((e) => {
-    setEmailData(prev => ({ ...prev, bcc: e.target.value }));
+    setEmailData((prev) => ({ ...prev, content: e.target.value }));
     setError('');
   }, []);
 
   const handleFileSelect = (e) => {
     const files = Array.from(e.target.files);
-    const newAttachments = files.map(file => ({
+    const newAttachments = files.map((file) => ({
       file,
       name: file.name,
       size: file.size,
       type: file.type,
-      preview: file.type.startsWith('image/') ? URL.createObjectURL(file) : null
+      preview: file.type.startsWith('image/') ? URL.createObjectURL(file) : null,
     }));
-    setAttachments(prev => [...prev, ...newAttachments]);
+    setAttachments((prev) => [...prev, ...newAttachments]);
   };
 
   const removeAttachment = (index) => {
-    setAttachments(prev => {
+    setAttachments((prev) => {
       const updated = [...prev];
       if (updated[index].preview) URL.revokeObjectURL(updated[index].preview);
       updated.splice(index, 1);
@@ -115,38 +312,48 @@ const Compose = () => {
     setError('');
     setSuccess('');
 
-    if (!emailData.to) return setError('Please enter at least one recipient');
+    if (toEmails.length === 0) return setError('Please enter at least one recipient');
     if (!emailData.subject) return setError('Please enter a subject');
     if (!emailData.content) return setError('Please enter email content');
 
     try {
       const formData = new FormData();
-      formData.append('to', emailData.to.split(',').map(e => e.trim()));
-      if (emailData.cc) formData.append('cc', emailData.cc.split(',').map(e => e.trim()));
-      if (emailData.bcc) formData.append('bcc', emailData.bcc.split(',').map(e => e.trim()));
+      formData.append('to', toEmails.join(','));
+      if (ccEmails.length > 0) formData.append('cc', ccEmails.join(','));
+      if (bccEmails.length > 0) formData.append('bcc', bccEmails.join(','));
       formData.append('subject', emailData.subject);
       formData.append('html', emailData.content);
       formData.append('customEmailId', emailData.customEmailId);
-      attachments.forEach(att => formData.append('attachments', att.file));
+      attachments.forEach((att) => formData.append('attachments', att.file));
 
       await sendEmail(formData).unwrap();
       setSuccess('Email sent successfully!');
-      setTimeout(() => navigate('/sent'), 2000);
+      
+      // If onClose is provided (reply/forward mode), close after sending
+      if (onClose) {
+        setTimeout(() => onClose(), 1500);
+      } else {
+        setTimeout(() => navigate('/sent'), 2000);
+      }
     } catch (err) {
       setError(err.data?.message || 'Failed to send email');
     }
   };
 
   const handleDiscard = () => {
-    if (emailData.to || emailData.subject || emailData.content || attachments.length > 0) {
-      if (window.confirm('Are you sure you want to discard this email?')) navigate(-1);
+    if (toEmails.length > 0 || emailData.subject || emailData.content || attachments.length > 0) {
+      if (window.confirm('Are you sure you want to discard this email?')) {
+        if (onClose) onClose();
+        else navigate(-1);
+      }
     } else {
-      navigate(-1);
+      if (onClose) onClose();
+      else navigate(-1);
     }
   };
 
   const selectCustomEmail = (emailId) => {
-    setEmailData(prev => ({ ...prev, customEmailId: emailId }));
+    setEmailData((prev) => ({ ...prev, customEmailId: emailId }));
     setShowDropdown(false);
   };
 
@@ -158,49 +365,76 @@ const Compose = () => {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
-  const autoLinkify = (text) => {
-    if (!text) return '';
-    const urlRegex = /(https?:\/\/[^\s]+|www\.[^\s]+|[a-zA-Z0-9][a-zA-Z0-9-]*\.[a-zA-Z]{2,}(?:\/[^\s]*)?)/g;
-    return text.replace(urlRegex, (url) => {
-      let href = url;
-      if (!url.startsWith('http://') && !url.startsWith('https://')) {
-        href = 'https://' + url;
-      }
-      return `<a href="${href}" target="_blank" rel="noopener noreferrer" class="text-purple-600 hover:underline">${url}</a>`;
-    });
-  };
+  // ── Sub-components ─────────────────────────────────────────────────────────
 
-  // ── Shared sub-sections (used in both views) ──────────────────────────────
+  const AttachmentList = () =>
+    attachments.length > 0 ? (
+      <div className="space-y-2">
+        <p className="text-xs font-medium text-gray-500">Attachments ({attachments.length})</p>
+        <div className="flex flex-wrap gap-2">
+          {attachments.map((att, index) => (
+            <div key={index} className="flex items-center space-x-2 bg-gray-100 rounded-lg px-2 py-1">
+              {att.preview ? (
+                <img src={att.preview} alt={att.name} className="w-8 h-8 object-cover rounded" />
+              ) : (
+                <Paperclip className="w-4 h-4 text-gray-400" />
+              )}
+              <div className="min-w-0">
+                <p className="text-xs text-gray-700 max-w-[150px] truncate">{att.name}</p>
+                <p className="text-[10px] text-gray-400">{formatFileSize(att.size)}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => removeAttachment(index)}
+                className="p-1 hover:bg-gray-200 rounded flex-shrink-0"
+              >
+                <X className="w-3 h-3 text-gray-400" />
+              </button>
+            </div>
+          ))}
+        </div>
+      </div>
+    ) : null;
 
   const FromDropdown = ({ isMobile }) => (
     <div className="relative" ref={dropdownRef}>
       <label className="text-xs font-medium text-gray-500 mb-1 block">From</label>
       <button
         type="button"
-        onClick={() => setShowDropdown(prev => !prev)}
+        onClick={() => setShowDropdown((prev) => !prev)}
         className="w-full flex items-center justify-between px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg hover:border-purple-300 transition text-sm"
       >
         <div className="flex items-center space-x-2 min-w-0">
           {selectedEmail?.profilePicture?.url ? (
-            <img src={selectedEmail.profilePicture.url} className={`${isMobile ? 'w-5 h-5' : 'w-6 h-6'} rounded-full flex-shrink-0`} alt="" />
+            <img
+              src={selectedEmail.profilePicture.url}
+              className={`${isMobile ? 'w-5 h-5' : 'w-6 h-6'} rounded-full flex-shrink-0`}
+              alt=""
+            />
           ) : (
-            <div className={`${isMobile ? 'w-5 h-5' : 'w-6 h-6'} bg-purple-100 rounded-full flex items-center justify-center flex-shrink-0`}>
+            <div
+              className={`${isMobile ? 'w-5 h-5' : 'w-6 h-6'} bg-purple-100 rounded-full flex items-center justify-center flex-shrink-0`}
+            >
               <span className="text-xs text-purple-600 font-medium">
                 {(selectedEmail?.displayName?.[0] || selectedEmail?.username?.[0] || 'U').toUpperCase()}
               </span>
             </div>
           )}
           <div className="text-left min-w-0">
-            <p className="text-gray-800 text-sm font-medium truncate">{selectedEmail?.displayName || selectedEmail?.username}</p>
+            <p className="text-gray-800 text-sm font-medium truncate">
+              {selectedEmail?.displayName || selectedEmail?.username}
+            </p>
             {!isMobile && <p className="text-gray-400 text-xs truncate">{selectedEmail?.email}</p>}
           </div>
         </div>
-        <ChevronDown className={`w-4 h-4 text-gray-400 flex-shrink-0 transition-transform ${showDropdown ? 'rotate-180' : ''}`} />
+        <ChevronDown
+          className={`w-4 h-4 text-gray-400 flex-shrink-0 transition-transform ${showDropdown ? 'rotate-180' : ''}`}
+        />
       </button>
 
       {showDropdown && (
         <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-30 max-h-60 overflow-y-auto">
-          {customEmails.map(email => (
+          {customEmails.map((email) => (
             <button
               key={email._id}
               type="button"
@@ -232,50 +466,6 @@ const Compose = () => {
     </div>
   );
 
-  const AttachmentList = () => (
-    attachments.length > 0 ? (
-      <div className="space-y-2">
-        <p className="text-xs font-medium text-gray-500">Attachments</p>
-        <div className="flex flex-wrap gap-2">
-          {attachments.map((att, index) => (
-            <div key={index} className="flex items-center space-x-2 bg-gray-100 rounded-lg px-2 py-1">
-              {att.preview ? (
-                <img src={att.preview} alt={att.name} className="w-8 h-8 object-cover rounded" />
-              ) : (
-                <Paperclip className="w-4 h-4 text-gray-400" />
-              )}
-              <div className="min-w-0">
-                <p className="text-xs text-gray-700 max-w-[150px] truncate">{att.name}</p>
-                <p className="text-[10px] text-gray-400">{formatFileSize(att.size)}</p>
-              </div>
-              <button type="button" onClick={() => removeAttachment(index)} className="p-1 hover:bg-gray-200 rounded flex-shrink-0">
-                <X className="w-3 h-3 text-gray-400" />
-              </button>
-            </div>
-          ))}
-        </div>
-      </div>
-    ) : null
-  );
-
-  const StatusMessages = () => (
-    <>
-      {error && (
-        <div className="flex items-center space-x-2 p-3 bg-red-50 rounded-lg">
-          <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0" />
-          <p className="text-sm text-red-600">{error}</p>
-        </div>
-      )}
-      {success && (
-        <div className="flex items-center space-x-2 p-3 bg-green-50 rounded-lg">
-          <CheckCircle className="w-4 h-4 text-green-500 flex-shrink-0" />
-          <p className="text-sm text-green-600">{success}</p>
-        </div>
-      )}
-    </>
-  );
-
-  // ── Minimized pill ────────────────────────────────────────────────────────
   if (isMinimized) {
     return (
       <div className="fixed bottom-4 right-4 bg-white rounded-lg shadow-lg border border-gray-200 w-72 z-50">
@@ -290,20 +480,131 @@ const Compose = () => {
           <Maximize2 className="w-4 h-4" />
         </div>
         <div className="p-2">
-          <p className="text-xs text-gray-500 truncate">To: {emailData.to || '...'}</p>
+          <p className="text-xs text-gray-500 truncate">
+            To: {toEmails[0] || '...'}
+            {toEmails.length > 1 ? ` +${toEmails.length - 1}` : ''}
+          </p>
           <p className="text-xs text-gray-500 truncate">Subject: {emailData.subject || 'No subject'}</p>
         </div>
       </div>
     );
   }
 
-  // ── MOBILE ────────────────────────────────────────────────────────────────
+  // ── Shared form fields ─────────────────────────────────────────────────────
+  const formFields = (isMobile) => (
+    <>
+      <FromDropdown isMobile={isMobile} />
+
+      <RecipientInput
+        label="To *"
+        emails={toEmails}
+        inputValue={toInput}
+        onInputChange={handleToInputChange}
+        onKeyDown={handleToKeyDown}
+        onRemove={handleToRemove}
+        placeholder="recipient@example.com"
+        inputRef={toInputRef}
+        hint="Press Enter or Tab to add email"
+      />
+
+      <div className="flex items-center space-x-3">
+        <button
+          type="button"
+          onClick={() => setShowCc((v) => !v)}
+          className="text-xs text-purple-600 hover:text-purple-700"
+        >
+          {showCc ? 'Hide CC' : 'Add CC'}
+        </button>
+        <button
+          type="button"
+          onClick={() => setShowBcc((v) => !v)}
+          className="text-xs text-purple-600 hover:text-purple-700"
+        >
+          {showBcc ? 'Hide BCC' : 'Add BCC'}
+        </button>
+      </div>
+
+      <RecipientInput
+        label="Cc"
+        emails={ccEmails}
+        inputValue={ccInput}
+        onInputChange={handleCcInputChange}
+        onKeyDown={handleCcKeyDown}
+        onRemove={handleCcRemove}
+        placeholder="cc@example.com"
+        inputRef={ccInputRef}
+        show={showCc}
+      />
+
+      <RecipientInput
+        label="Bcc"
+        emails={bccEmails}
+        inputValue={bccInput}
+        onInputChange={handleBccInputChange}
+        onKeyDown={handleBccKeyDown}
+        onRemove={handleBccRemove}
+        placeholder="bcc@example.com"
+        inputRef={bccInputRef}
+        show={showBcc}
+      />
+
+      <div>
+        <label className="block text-xs font-medium text-gray-500 mb-1">Subject</label>
+        <input
+          type="text"
+          value={emailData.subject}
+          onChange={handleSubjectChange}
+          placeholder="Enter subject"
+          className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-400 focus:border-transparent outline-none text-sm"
+        />
+      </div>
+
+      <button
+        type="button"
+        onClick={() => fileInputRef.current?.click()}
+        className="flex items-center space-x-1 px-3 py-1.5 text-gray-600 hover:bg-gray-100 rounded-lg transition text-sm w-fit"
+      >
+        <Paperclip className="w-4 h-4" />
+        <span>Attach Files</span>
+      </button>
+
+      <textarea
+        ref={contentRef}
+        value={emailData.content}
+        onChange={handleContentChange}
+        placeholder="Write your message here..."
+        className={`w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-400 focus:border-transparent outline-none text-sm resize-none ${
+          isMobile ? 'min-h-[200px]' : 'h-64'
+        }`}
+      />
+
+      <AttachmentList />
+
+      {error && (
+        <div className="flex items-center space-x-2 p-3 bg-red-50 rounded-lg">
+          <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0" />
+          <p className="text-sm text-red-600">{error}</p>
+        </div>
+      )}
+      {success && (
+        <div className="flex items-center space-x-2 p-3 bg-green-50 rounded-lg">
+          <CheckCircle className="w-4 h-4 text-green-500 flex-shrink-0" />
+          <p className="text-sm text-green-600">{success}</p>
+        </div>
+      )}
+
+      <input type="file" ref={fileInputRef} onChange={handleFileSelect} multiple className="hidden" />
+    </>
+  );
+  // ──────────────────────────────────────────────────────────────────────────
+
+  // MOBILE VIEW
   const mobileView = (
     <div className="fixed inset-0 bg-white z-50 flex flex-col">
       <div className="flex items-center justify-between px-4 py-3 bg-purple-600 text-white sticky top-0 z-10">
         <div className="flex items-center space-x-2">
           <Send className="w-5 h-5" />
-          <h2 className="text-base font-semibold">New Message</h2>
+          <h2 className="text-base font-semibold">{isReply ? 'Reply' : 'New Message'}</h2>
         </div>
         <button type="button" onClick={handleDiscard} className="p-1">
           <X className="w-5 h-5" />
@@ -311,83 +612,13 @@ const Compose = () => {
       </div>
 
       <form onSubmit={handleSubmit} className="flex-1 flex flex-col overflow-hidden">
-        <div className="flex-1 overflow-y-auto p-4 space-y-4 pb-24">
-          <FromDropdown isMobile />
-
-          <div>
-            <label className="text-xs font-medium text-gray-500 mb-1 block">To</label>
-            <input
-              type="text"
-              value={emailData.to}
-              onChange={handleToChange}
-              placeholder="recipient@example.com"
-              className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-purple-400 focus:border-transparent outline-none"
-            />
-            <div className="flex items-center space-x-3 mt-1">
-              <button type="button" onClick={() => setShowCc(v => !v)} className="text-xs text-purple-600">
-                {showCc ? 'Hide CC' : 'Add CC'}
-              </button>
-              <button type="button" onClick={() => setShowBcc(v => !v)} className="text-xs text-purple-600">
-                {showBcc ? 'Hide BCC' : 'Add BCC'}
-              </button>
-            </div>
-          </div>
-
-          {showCc && (
-            <input
-              type="text"
-              value={emailData.cc}
-              onChange={handleCcChange}
-              placeholder="Cc: recipient@example.com"
-              className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-purple-400 focus:border-transparent outline-none"
-            />
-          )}
-
-          {showBcc && (
-            <input
-              type="text"
-              value={emailData.bcc}
-              onChange={handleBccChange}
-              placeholder="Bcc: recipient@example.com"
-              className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-purple-400 focus:border-transparent outline-none"
-            />
-          )}
-
-          <input
-            type="text"
-            value={emailData.subject}
-            onChange={handleSubjectChange}
-            placeholder="Subject"
-            className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-purple-400 focus:border-transparent outline-none"
-          />
-
-          {/* Attachment Button Only */}
-          <div className="flex items-center justify-between">
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              className="flex items-center space-x-1 px-3 py-1.5 text-gray-600 hover:bg-gray-100 rounded-lg transition text-sm"
-            >
-              <Paperclip className="w-4 h-4" />
-              <span>Attach File</span>
-            </button>
-          </div>
-
-          <textarea
-            ref={contentRef}
-            value={emailData.content}
-            onChange={handleContentChange}
-            placeholder="Write your message... (URLs like google.com will become clickable)"
-            className="w-full min-h-[200px] px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-400 focus:border-transparent outline-none text-sm"
-          />
-
-          <AttachmentList />
-          <StatusMessages />
-          <input type="file" ref={fileInputRef} onChange={handleFileSelect} multiple className="hidden" />
-        </div>
-
+        <div className="flex-1 overflow-y-auto p-4 space-y-4 pb-24">{formFields(true)}</div>
         <div className="flex items-center justify-between px-4 py-3 bg-white border-t border-gray-100 sticky bottom-0">
-          <button type="button" onClick={handleDiscard} className="px-3 py-2 text-sm text-red-600 hover:bg-red-50 rounded-lg transition">
+          <button
+            type="button"
+            onClick={handleDiscard}
+            className="px-3 py-2 text-sm text-red-600 hover:bg-red-50 rounded-lg transition"
+          >
             Discard
           </button>
           <button
@@ -403,118 +634,73 @@ const Compose = () => {
     </div>
   );
 
-  // ── DESKTOP ───────────────────────────────────────────────────────────────
+  // DESKTOP VIEW
   const desktopView = (
-    <div className={`fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center ${isFullscreen ? 'p-0' : 'p-4'}`}>
-      <div className={`bg-white rounded-xl shadow-2xl flex flex-col ${isFullscreen ? 'w-full h-full rounded-none' : 'w-full max-w-3xl h-[85vh]'}`}>
+    <div
+      className={`fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center ${
+        isFullscreen ? 'p-0' : 'p-4'
+      }`}
+    >
+      <div
+        className={`bg-white rounded-xl shadow-2xl flex flex-col ${
+          isFullscreen ? 'w-full h-full rounded-none' : 'w-full max-w-3xl h-[85vh]'
+        }`}
+      >
         <div className="flex items-center justify-between px-5 py-3 bg-purple-600 text-white rounded-t-xl">
           <div className="flex items-center space-x-2">
             <Send className="w-5 h-5" />
-            <h2 className="text-base font-semibold">New Message</h2>
+            <h2 className="text-base font-semibold">{isReply ? 'Reply' : 'New Message'}</h2>
           </div>
           <div className="flex items-center space-x-1">
-            <button type="button" onClick={() => setIsMinimized(true)} className="p-1.5 hover:bg-purple-700 rounded transition" title="Minimize">
+            <button
+              type="button"
+              onClick={() => setIsMinimized(true)}
+              className="p-1.5 hover:bg-purple-700 rounded transition"
+              title="Minimize"
+            >
               <Minimize2 className="w-4 h-4" />
             </button>
-            <button type="button" onClick={() => setIsFullscreen(v => !v)} className="p-1.5 hover:bg-purple-700 rounded transition" title="Fullscreen">
+            <button
+              type="button"
+              onClick={() => setIsFullscreen((v) => !v)}
+              className="p-1.5 hover:bg-purple-700 rounded transition"
+              title="Fullscreen"
+            >
               <Maximize2 className="w-4 h-4" />
             </button>
-            <button type="button" onClick={handleDiscard} className="p-1.5 hover:bg-purple-700 rounded transition" title="Close">
-              <X className="w-5 h-5" />
-            </button>
+            {onClose && (
+              <button
+                type="button"
+                onClick={onClose}
+                className="p-1.5 hover:bg-purple-700 rounded transition"
+                title="Close"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            )}
           </div>
         </div>
 
         <form onSubmit={handleSubmit} className="flex-1 flex flex-col overflow-hidden">
-          <div className="flex-1 overflow-y-auto p-5 space-y-4">
-            <FromDropdown isMobile={false} />
-
-            <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">To</label>
-              <input
-                type="text"
-                value={emailData.to}
-                onChange={handleToChange}
-                placeholder="recipient@example.com"
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-400 focus:border-transparent outline-none text-sm"
-              />
-              <div className="flex items-center space-x-3 mt-1">
-                <button type="button" onClick={() => setShowCc(v => !v)} className="text-xs text-purple-600 hover:text-purple-700">
-                  {showCc ? 'Hide CC' : 'Add CC'}
-                </button>
-                <button type="button" onClick={() => setShowBcc(v => !v)} className="text-xs text-purple-600 hover:text-purple-700">
-                  {showBcc ? 'Hide BCC' : 'Add BCC'}
-                </button>
+          <div className="flex-1 overflow-y-auto p-5 space-y-4">{formFields(false)}</div>
+          <div className="flex items-center justify-between px-5 py-3 bg-gray-50 border-t border-gray-200 rounded-b-xl">
+            <div className="flex items-center space-x-3 text-xs text-gray-400">
+              <div className="flex items-center gap-1">
+                <CornerDownLeft className="w-3 h-3" />
+                <span>Enter</span>
               </div>
+              <div className="flex items-center gap-1">
+                <Tag className="w-3 h-3" />
+                <span>Comma (,)</span>
+              </div>
+              <span>to add recipients</span>
             </div>
-
-            {showCc && (
-              <input
-                type="text"
-                value={emailData.cc}
-                onChange={handleCcChange}
-                placeholder="Cc: recipient@example.com"
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-400 focus:border-transparent outline-none text-sm"
-              />
-            )}
-
-            {showBcc && (
-              <input
-                type="text"
-                value={emailData.bcc}
-                onChange={handleBccChange}
-                placeholder="Bcc: recipient@example.com"
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-400 focus:border-transparent outline-none text-sm"
-              />
-            )}
-
-            <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">Subject</label>
-              <input
-                type="text"
-                value={emailData.subject}
-                onChange={handleSubjectChange}
-                placeholder="Enter subject"
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-400 focus:border-transparent outline-none text-sm"
-              />
-            </div>
-
-            {/* Attachment Button Only */}
-            <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-2">
               <button
                 type="button"
-                onClick={() => fileInputRef.current?.click()}
-                className="flex items-center space-x-1 px-3 py-1.5 text-gray-600 hover:bg-gray-100 rounded-lg transition text-sm"
+                onClick={handleDiscard}
+                className="px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 rounded-lg transition"
               >
-                <Paperclip className="w-4 h-4" />
-                <span>Attach File</span>
-              </button>
-            </div>
-
-            <textarea
-              ref={contentRef}
-              value={emailData.content}
-              onChange={handleContentChange}
-              placeholder="Write your message here... (URLs like google.com will become clickable)"
-              className="w-full h-64 px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-400 focus:border-transparent outline-none resize-none font-mono text-sm"
-            />
-
-            <AttachmentList />
-            <StatusMessages />
-            <input type="file" ref={fileInputRef} onChange={handleFileSelect} multiple className="hidden" />
-          </div>
-
-          <div className="flex items-center justify-between px-5 py-3 bg-gray-50 border-t border-gray-200 rounded-b-xl">
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              className="flex items-center space-x-1 px-3 py-1.5 text-gray-600 hover:bg-gray-200 rounded-lg transition text-sm"
-            >
-              <Paperclip className="w-4 h-4" />
-              <span>Attach</span>
-            </button>
-            <div className="flex items-center space-x-2">
-              <button type="button" onClick={handleDiscard} className="px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 rounded-lg transition">
                 Discard
               </button>
               <button

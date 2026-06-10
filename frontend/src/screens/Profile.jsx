@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
-import { useGetProfileQuery, useUpdateProfileMutation, useChangePasswordMutation, useToggleUser2FAMutation } from '../slices/userApiSlice';
+import { useGetProfileQuery, useUpdateProfileMutation, useChangePasswordMutation, useToggleTwoFactorMutation } from '../slices/userApiSlice';
 import { setCredentials, logout } from '../slices/authSlice';
 import { 
   User, 
@@ -22,6 +22,7 @@ import {
   EyeOff
 } from 'lucide-react';
 import { format } from 'date-fns';
+import { toast } from 'react-hot-toast';
 
 const Profile = () => {
   const dispatch = useDispatch();
@@ -30,7 +31,7 @@ const Profile = () => {
   const { data: profileData, isLoading: profileLoading, error: profileError, refetch } = useGetProfileQuery();
   const [updateProfile, { isLoading: isUpdating }] = useUpdateProfileMutation();
   const [changePassword, { isLoading: isChangingPassword }] = useChangePasswordMutation();
-  const [toggle2FA, { isLoading: isToggling2FA }] = useToggleUser2FAMutation();
+  const [toggleTwoFactor, { isLoading: isToggling2FA }] = useToggleTwoFactorMutation(); // ✅ Correct hook name
   
   const [formData, setFormData] = useState({
     name: '',
@@ -53,7 +54,8 @@ const Profile = () => {
   const [success, setSuccess] = useState('');
   const [show2FAModal, setShow2FAModal] = useState(false);
 
-  const user = profileData?.data || userInfo?.user || userInfo;
+  // Get user data from profile API response
+  const user = profileData?.data || userInfo;
 
   useEffect(() => {
     if (user) {
@@ -90,13 +92,13 @@ const Profile = () => {
     const file = e.target.files[0];
     if (file) {
       if (file.size > 5 * 1024 * 1024) {
-        setError('Profile picture must be less than 5MB');
+        toast.error('Profile picture must be less than 5MB');
         return;
       }
       
       const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
       if (!allowedTypes.includes(file.type)) {
-        setError('Only image files are allowed (JPEG, PNG, GIF, WEBP)');
+        toast.error('Only image files are allowed (JPEG, PNG, GIF, WEBP)');
         return;
       }
       
@@ -123,13 +125,21 @@ const Profile = () => {
       }
 
       const result = await updateProfile(formDataToSend).unwrap();
-      dispatch(setCredentials(result.data));
+      
+      // Update Redux store with new user data
+      dispatch(setCredentials({ user: result.data, token: userInfo?.token }));
+      
+      toast.success('Profile updated successfully');
       setSuccess('Profile updated successfully');
       setIsEditing(false);
       setProfilePicture(null);
       refetch();
+      
+      setTimeout(() => setSuccess(''), 3000);
     } catch (err) {
-      setError(err.data?.message || 'Failed to update profile');
+      const errorMsg = err.data?.message || 'Failed to update profile';
+      setError(errorMsg);
+      toast.error(errorMsg);
     }
   };
 
@@ -139,12 +149,16 @@ const Profile = () => {
     setSuccess('');
 
     if (passwordData.newPassword !== passwordData.confirmPassword) {
-      setError('New passwords do not match');
+      const errorMsg = 'New passwords do not match';
+      setError(errorMsg);
+      toast.error(errorMsg);
       return;
     }
 
     if (passwordData.newPassword.length < 6) {
-      setError('New password must be at least 6 characters');
+      const errorMsg = 'New password must be at least 6 characters';
+      setError(errorMsg);
+      toast.error(errorMsg);
       return;
     }
 
@@ -153,6 +167,8 @@ const Profile = () => {
         currentPassword: passwordData.currentPassword,
         newPassword: passwordData.newPassword,
       }).unwrap();
+      
+      toast.success('Password changed successfully');
       setSuccess('Password changed successfully');
       setPasswordData({
         currentPassword: '',
@@ -160,20 +176,38 @@ const Profile = () => {
         confirmPassword: '',
       });
       setIsChangingPass(false);
+      
+      setTimeout(() => setSuccess(''), 3000);
     } catch (err) {
-      setError(err.data?.message || 'Failed to change password');
+      const errorMsg = err.data?.message || 'Failed to change password';
+      setError(errorMsg);
+      toast.error(errorMsg);
     }
   };
 
   const handleToggle2FA = async () => {
     try {
-      await toggle2FA({ enable: !user?.isTwoFactorEnabled }).unwrap();
+      const result = await toggleTwoFactor({ enable: !user?.isTwoFactorEnabled }).unwrap();
       refetch();
       setShow2FAModal(false);
-      setSuccess(`2FA ${!user?.isTwoFactorEnabled ? 'enabled' : 'disabled'} successfully`);
+      
+      // Update Redux store
+      if (userInfo) {
+        dispatch(setCredentials({ 
+          user: { ...userInfo, isTwoFactorEnabled: result.data.isTwoFactorEnabled }, 
+          token: userInfo.token 
+        }));
+      }
+      
+      const message = `2FA ${!user?.isTwoFactorEnabled ? 'enabled' : 'disabled'} successfully`;
+      toast.success(message);
+      setSuccess(message);
+      
       setTimeout(() => setSuccess(''), 3000);
     } catch (err) {
-      setError(err.data?.message || 'Failed to toggle 2FA');
+      const errorMsg = err.data?.message || 'Failed to toggle 2FA';
+      setError(errorMsg);
+      toast.error(errorMsg);
     }
   };
 

@@ -1,5 +1,6 @@
 // controllers/email/teamController.js
 import User from '../models/userModel.js';
+import jwt from 'jsonwebtoken';
 import TeamAccess from '../models/teamAccessModel.js';
 import CustomEmail from '../models/customEmailModel.js';
 import { Resend } from 'resend';
@@ -124,6 +125,7 @@ const getPermissionsFromLevel = (accessLevel) => {
 /**
  * Invite user to access domain emails
  * POST /api/email/team/invite
+ * User MUST have a Nexa account to be invited
  */
 const inviteUserToDomain = async (req, res) => {
   try {
@@ -144,6 +146,15 @@ const inviteUserToDomain = async (req, res) => {
       });
     }
 
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please enter a valid email address'
+      });
+    }
+
     const owner = await User.findById(ownerId);
     if (!owner) {
       return res.status(404).json({
@@ -152,6 +163,7 @@ const inviteUserToDomain = async (req, res) => {
       });
     }
 
+    // Find the Resend config
     const resendConfig = owner.resendConfigs.find(
       c => (c.id === resendConfigId || c._id?.toString() === resendConfigId?.toString())
       && c.isActive
@@ -164,14 +176,19 @@ const inviteUserToDomain = async (req, res) => {
       });
     }
 
+    // CRITICAL: Check if user exists in Nexa database
     const invitedUser = await User.findOne({ email: email.toLowerCase() });
+    
     if (!invitedUser) {
       return res.status(404).json({
         success: false,
-        message: 'User not found with this email. They need to register first.'
+        message: 'User not found with this email. They need to register for a Nexa account first.',
+        code: 'USER_NOT_FOUND',
+        action: 'REGISTER_FIRST'
       });
     }
 
+    // Cannot invite yourself
     if (invitedUser._id.toString() === ownerId.toString()) {
       return res.status(400).json({
         success: false,
@@ -179,7 +196,7 @@ const inviteUserToDomain = async (req, res) => {
       });
     }
 
-    // Check if user already has access
+    // Check if user already has access (active or pending)
     const existingAccess = await TeamAccess.findOne({
       resendConfigId,
       ownerId,
@@ -188,9 +205,24 @@ const inviteUserToDomain = async (req, res) => {
     });
 
     if (existingAccess) {
+      let statusMessage = '';
+      switch (existingAccess.status) {
+        case 'active':
+          statusMessage = 'already has active access to this domain';
+          break;
+        case 'pending':
+          statusMessage = 'already has a pending invitation. Please ask them to check their email';
+          break;
+        case 'declined':
+          statusMessage = 'has previously declined the invitation. You can resend it';
+          break;
+        default:
+          statusMessage = 'already has access to this domain';
+      }
+      
       return res.status(400).json({
         success: false,
-        message: 'User already has access to this domain',
+        message: `User ${statusMessage}`,
         data: {
           status: existingAccess.status,
           accessLevel: existingAccess.accessLevel
@@ -199,15 +231,16 @@ const inviteUserToDomain = async (req, res) => {
     }
 
     const permissions = getPermissionsFromLevel(accessLevel);
-
     const invitationToken = generateToken();
     const tokenExpiry = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
 
+    // Create team access record
     const teamAccess = new TeamAccess({
       resendConfigId,
       domain: resendConfig.domain,
       ownerId,
       userId: invitedUser._id,
+      invitedEmail: invitedUser.email,
       accessLevel,
       permissions,
       accessibleEmails: customEmailIds,
@@ -219,6 +252,7 @@ const inviteUserToDomain = async (req, res) => {
 
     await teamAccess.save();
 
+    // Send invitation email
     const resend = new Resend(resendConfig.apiKey);
     const acceptLink = `${process.env.FRONTEND_URL}/accept-invitation/${invitationToken}`;
 
@@ -233,8 +267,16 @@ const inviteUserToDomain = async (req, res) => {
             <p>Hello ${invitedUser.name},</p>
             <p><strong>${owner.name}</strong> has invited you to access emails for domain <strong>${resendConfig.domain}</strong>.</p>
             <p>Access Level: <strong>${accessLevel}</strong></p>
+            <p>Permissions:</p>
+            <ul>
+              <li>✓ View emails</li>
+              ${permissions.canSendEmails ? '<li>✓ Send emails</li>' : ''}
+              ${permissions.canCreateCustomEmails ? '<li>✓ Create custom emails</li>' : ''}
+              ${permissions.canDeleteCustomEmails ? '<li>✓ Delete custom emails</li>' : ''}
+              ${permissions.canManageAccess ? '<li>✓ Manage team access</li>' : ''}
+            </ul>
             <div style="text-align: center; margin: 30px 0;">
-              <a href="${acceptLink}" style="background-color: #7b3eff; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px;">
+              <a href="${acceptLink}" style="background-color: #7b3eff; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; display: inline-block;">
                 Accept Invitation
               </a>
             </div>
@@ -254,6 +296,7 @@ const inviteUserToDomain = async (req, res) => {
       });
     }
 
+    // Send push notification to invited user
     await notifyTeamInvite(invitedUser._id, owner.name, resendConfig.domain, accessLevel);
 
     res.status(200).json({
@@ -262,7 +305,12 @@ const inviteUserToDomain = async (req, res) => {
       data: { 
         invitationId: teamAccess._id,
         expiresIn: '7 days',
-        accessLevel
+        accessLevel,
+        invitedUser: {
+          id: invitedUser._id,
+          name: invitedUser.name,
+          email: invitedUser.email
+        }
       }
     });
 
@@ -280,11 +328,39 @@ const inviteUserToDomain = async (req, res) => {
  * Accept invitation
  * POST /api/email/team/accept/:token
  */
+/**
+ * Accept invitation
+ * POST /api/email/team/accept/:token
+ * PUBLIC ROUTE - No authentication required
+ */
+/**
+ * Accept invitation
+ * POST /api/email/team/accept/:token
+ * PUBLIC ROUTE - No authentication required
+ */
 const acceptInvitation = async (req, res) => {
   try {
-    const userId = req.userId;
     const { token } = req.params;
 
+    // Get userId from body, cookie, or Authorization header
+    let targetUserId = req.body.userId;
+
+    if (!targetUserId && req.cookies?.jwt) {
+      try {
+        const decoded = jwt.verify(req.cookies.jwt, process.env.JWT_SECRET);
+        targetUserId = decoded.userId;
+      } catch (e) {}
+    }
+
+    if (!targetUserId && req.headers.authorization?.startsWith('Bearer ')) {
+      try {
+        const bearerToken = req.headers.authorization.split(' ')[1];
+        const decoded = jwt.verify(bearerToken, process.env.JWT_SECRET);
+        targetUserId = decoded.userId;
+      } catch (e) {}
+    }
+
+    // Find the invitation
     const teamAccess = await TeamAccess.findOne({
       invitationToken: token,
       tokenExpiry: { $gt: new Date() },
@@ -294,38 +370,58 @@ const acceptInvitation = async (req, res) => {
     if (!teamAccess) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid or expired invitation'
+        message: 'Invalid or expired invitation. The invitation link may have expired or already been used.'
       });
     }
 
-    if (teamAccess.userId.toString() !== userId) {
+    // If still no userId, user is not logged in
+    if (!targetUserId) {
+      return res.status(401).json({
+        success: false,
+        message: 'Please log in to accept this invitation',
+        requiresLogin: true,
+        invitedEmail: teamAccess.invitedEmail
+      });
+    }
+
+    // Find the user who is accepting
+    const acceptingUser = await User.findById(targetUserId);
+    if (!acceptingUser) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Verify the logged-in user matches the invited user
+    if (acceptingUser.email.toLowerCase() !== teamAccess.invitedEmail.toLowerCase()) {
       return res.status(403).json({
         success: false,
-        message: 'This invitation is not for you'
+        message: `This invitation was sent to ${teamAccess.invitedEmail}. Please log in with that account to accept.`,
+        expectedEmail: teamAccess.invitedEmail
       });
     }
 
+    // Update the team access record
     teamAccess.status = 'active';
     teamAccess.acceptedAt = new Date();
     teamAccess.invitationToken = null;
     teamAccess.tokenExpiry = null;
     await teamAccess.save();
 
-    // Notify the owner that invitation was accepted
+    // Notify the owner
     const owner = await User.findById(teamAccess.ownerId);
-    const user = await User.findById(userId);
-    
-    if (owner && user) {
+    if (owner) {
       await sendEmailNotification(
         owner.email,
         `Invitation Accepted: ${teamAccess.domain}`,
         `
           <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
             <h2 style="color: #7b3eff;">Invitation Accepted</h2>
-            <p><strong>${user.name}</strong> has accepted your invitation to access <strong>${teamAccess.domain}</strong>.</p>
+            <p><strong>${acceptingUser.name}</strong> has accepted your invitation to access <strong>${teamAccess.domain}</strong>.</p>
             <p>Access Level: <strong>${teamAccess.accessLevel}</strong></p>
             <div style="text-align: center; margin: 30px 0;">
-              <a href="${process.env.FRONTEND_URL}/team/access" style="background-color: #7b3eff; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px;">Manage Team Access</a>
+              <a href="${process.env.FRONTEND_URL}/team/access/${teamAccess.resendConfigId}" style="background-color: #7b3eff; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px;">Manage Team Access</a>
             </div>
             <hr />
             <p style="color: #666; font-size: 12px;">Nexa - Email Communication Reimagined</p>
@@ -339,7 +435,8 @@ const acceptInvitation = async (req, res) => {
       message: 'Invitation accepted successfully! You now have access to the domain emails.',
       data: {
         domain: teamAccess.domain,
-        accessLevel: teamAccess.accessLevel
+        accessLevel: teamAccess.accessLevel,
+        resendConfigId: teamAccess.resendConfigId
       }
     });
 
@@ -503,34 +600,81 @@ const resendInvitation = async (req, res) => {
  * Get all users with access to a domain
  * GET /api/email/team/access/:resendConfigId
  */
+// controllers/email/teamController.js
+
 const getDomainAccessUsers = async (req, res) => {
   try {
-    const ownerId = req.userId;
+    const userId = req.userId;
     const { resendConfigId } = req.params;
 
-    const owner = await User.findById(ownerId);
+    console.log('=== getDomainAccessUsers DEBUG ===');
+    console.log('userId:', userId);
+    console.log('resendConfigId from params:', resendConfigId);
+
+    const owner = await User.findById(userId);
+    console.log('owner found:', !!owner);
+    console.log('owner.resendConfigs:', owner?.resendConfigs?.map(c => ({
+      id: c.id,
+      _id: c._id?.toString(),
+    })));
+
+    const resendConfig = owner?.resendConfigs?.find(
+      c => c.id === resendConfigId || c._id?.toString() === resendConfigId
+    );
+    console.log('resendConfig match:', !!resendConfig);
+
+    const myAccess = await TeamAccess.findOne({
+      resendConfigId,
+      userId,
+      status: 'active'
+    });
+    console.log('myAccess:', myAccess);
+    console.log('=================================');
+
     if (!owner) {
-      return res.status(404).json({
-        success: false,
-        message: 'User not found'
-      });
+      return res.status(404).json({ success: false, message: 'User not found' });
     }
 
-    const resendConfig = owner.resendConfigs.find(c => c.id === resendConfigId);
     if (!resendConfig) {
-      return res.status(403).json({
-        success: false,
-        message: 'You do not own this domain configuration'
+      if (!myAccess) {
+        return res.status(403).json({
+          success: false,
+          message: 'You do not have permission to view team members for this domain'
+        });
+      }
+
+      const allMembers = await TeamAccess.find({
+        resendConfigId,
+        status: 'active'
+      }).populate('userId', 'name email profilePicture createdAt');
+
+      return res.status(200).json({
+        success: true,
+        data: {
+          domain: myAccess.domain,
+          customEmails: [],
+          users: allMembers.map(access => ({
+            id: access._id,
+            user: access.userId,
+            accessLevel: access.accessLevel,
+            permissions: access.permissions,
+            accessibleEmails: access.accessibleEmails,
+            status: access.status,
+            invitedAt: access.createdAt,
+            acceptedAt: access.acceptedAt,
+            invitedBy: access.invitedBy
+          }))
+        }
       });
     }
 
+    // Owner path
     const accessList = await TeamAccess.find({
       resendConfigId,
-      ownerId,
+      ownerId: userId,
       status: { $ne: 'revoked' }
     }).populate('userId', 'name email profilePicture createdAt');
 
-    // Get custom emails for this domain
     const customEmails = await CustomEmail.find({
       resendConfigId,
       isActive: true

@@ -396,39 +396,6 @@ const verifyTwoFactorOTP = async (req, res) => {
   }
 };
 
-// Enable/Disable 2FA
-const toggleTwoFactor = async (req, res) => {
-  try {
-    const userId = req.userId; // From auth middleware
-    const { enable } = req.body;
-
-    const user = await User.findById(userId);
-    if (!user) {
-      return res.status(404).json({ 
-        success: false, 
-        message: 'User not found' 
-      });
-    }
-
-    user.isTwoFactorEnabled = enable;
-    await user.save();
-
-    res.status(200).json({
-      success: true,
-      message: `2FA ${enable ? 'enabled' : 'disabled'} successfully`,
-      data: { isTwoFactorEnabled: user.isTwoFactorEnabled }
-    });
-
-  } catch (error) {
-    console.error('Toggle 2FA error:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Error toggling 2FA', 
-      error: error.message 
-    });
-  }
-};
-
 // Forgot password - send OTP
 const forgotPassword = async (req, res) => {
   try {
@@ -532,7 +499,6 @@ export {
   resendVerificationOTP,
   login,
   verifyTwoFactorOTP,
-  toggleTwoFactor,
   forgotPassword,
   resetPassword
 };

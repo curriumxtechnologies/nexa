@@ -186,7 +186,34 @@ const sendEmail = async (req, res) => {
     const resend = new Resend(resendConfig.apiKey);
     const fromDisplay = customEmail.displayName || customEmail.username;
     const fromAddress = `${fromDisplay} <${customEmail.email}>`;
-    const toArray = Array.isArray(to) ? to : [to];
+    
+    // Parse to array - handle both string and array formats
+    let toArray = [];
+    if (typeof to === 'string') {
+      toArray = to.split(',').map(email => email.trim()).filter(email => email);
+    } else if (Array.isArray(to)) {
+      toArray = to;
+    }
+    
+    // Parse cc if present
+    let ccArray = [];
+    if (cc) {
+      if (typeof cc === 'string') {
+        ccArray = cc.split(',').map(email => email.trim()).filter(email => email);
+      } else if (Array.isArray(cc)) {
+        ccArray = cc;
+      }
+    }
+    
+    // Parse bcc if present
+    let bccArray = [];
+    if (bcc) {
+      if (typeof bcc === 'string') {
+        bccArray = bcc.split(',').map(email => email.trim()).filter(email => email);
+      } else if (Array.isArray(bcc)) {
+        bccArray = bcc;
+      }
+    }
 
     const emailData = {
       from: fromAddress,
@@ -209,12 +236,22 @@ const sendEmail = async (req, res) => {
       }
     }
 
-    if (cc && cc.length > 0) emailData.cc = cc;
-    if (bcc && bcc.length > 0) emailData.bcc = bcc;
+    // Add cc and bcc only if they have values
+    if (ccArray.length > 0) emailData.cc = ccArray;
+    if (bccArray.length > 0) emailData.bcc = bccArray;
+
+    console.log('📧 Sending email with:', {
+      from: fromAddress,
+      to: toArray,
+      cc: ccArray,
+      bcc: bccArray,
+      subject
+    });
 
     const { data, error } = await resend.emails.send(emailData);
 
     if (error) {
+      console.error('❌ Resend error:', error);
       return res.status(400).json({
         success: false,
         message: 'Failed to send email',
@@ -234,8 +271,8 @@ const sendEmail = async (req, res) => {
         name: customEmail.displayName
       },
       to: toArray.map(t => ({ email: t, name: null })),
-      cc: cc ? cc.map(c => ({ email: c, name: null })) : [],
-      bcc: bcc ? bcc.map(b => ({ email: b, name: null })) : [],
+      cc: ccArray.map(c => ({ email: c, name: null })),
+      bcc: bccArray.map(b => ({ email: b, name: null })),
       subject,
       content: html,
       contentType: 'html',

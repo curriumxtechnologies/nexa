@@ -2,6 +2,8 @@ import { apiSlice } from './apiSlice';
 
 export const authApiSlice = apiSlice.injectEndpoints({
   endpoints: (builder) => ({
+    // ==================== PUBLIC AUTH ROUTES ====================
+    
     // Register user
     register: builder.mutation({
       query: (userData) => ({
@@ -9,6 +11,7 @@ export const authApiSlice = apiSlice.injectEndpoints({
         method: 'POST',
         body: userData,
       }),
+      invalidatesTags: ['User'],
     }),
 
     // Verify email OTP
@@ -18,6 +21,7 @@ export const authApiSlice = apiSlice.injectEndpoints({
         method: 'POST',
         body: verificationData,
       }),
+      invalidatesTags: ['User'],
     }),
 
     // Resend verification OTP
@@ -36,9 +40,10 @@ export const authApiSlice = apiSlice.injectEndpoints({
         method: 'POST',
         body: credentials,
       }),
+      invalidatesTags: ['User'],
     }),
 
-    // Verify 2FA OTP
+    // Verify 2FA OTP during login
     verify2FA: builder.mutation({
       query: (twoFAData) => ({
         url: '/auth/verify-2fa',
@@ -65,24 +70,29 @@ export const authApiSlice = apiSlice.injectEndpoints({
       }),
     }),
 
-    // Toggle 2FA (protected route)
+    // ==================== PROTECTED USER ROUTES (using userApiSlice instead) ====================
+    // NOTE: toggle2FA and getProfile should be in userApiSlice, not authApiSlice
+    // But keeping for backward compatibility - they will be deprecated
     toggle2FA: builder.mutation({
       query: (toggleData) => ({
-        url: '/auth/toggle-2fa',
-        method: 'POST',
+        url: '/users/toggle-2fa',  // Changed from /auth/toggle-2fa to /users/toggle-2fa
+        method: 'PUT',
         body: toggleData,
       }),
+      invalidatesTags: ['User'],
     }),
 
-    // Get user profile (protected route)
+    // Get user profile - should use userApiSlice
     getProfile: builder.query({
-      query: () => '/auth/profile',
+      query: () => '/users/profile',  // Changed from /auth/profile to /users/profile
+      providesTags: ['User'],
     }),
   }),
 });
 
 // Export hooks for usage in components
 export const {
+  // Public auth hooks
   useRegisterMutation,
   useVerifyEmailMutation,
   useResendVerificationMutation,
@@ -90,6 +100,8 @@ export const {
   useVerify2FAMutation,
   useForgotPasswordMutation,
   useResetPasswordMutation,
+  
+  // Protected user hooks (deprecated - use userApiSlice instead)
   useToggle2FAMutation,
   useGetProfileQuery,
 } = authApiSlice;
