@@ -82,6 +82,12 @@ const userSchema = new mongoose.Schema({
       default: null
     }
   },
+  // Role-based access control
+  role: {
+    type: String,
+    enum: ['user', 'admin', 'super_admin'],
+    default: 'user'
+  },
   // Array of Resend API keys for different domains
   resendConfigs: [{
     id: {
@@ -259,13 +265,19 @@ const userSchema = new mongoose.Schema({
       type: Boolean,
       default: true
     }
-  }]
+  }],
+  // Last login tracking
+  lastLoginAt: {
+    type: Date,
+    default: null
+  }
 }, {
   timestamps: true
 });
 
 // Create indexes for faster queries
 userSchema.index({ email: 1 });
+userSchema.index({ role: 1 });
 userSchema.index({ 'resendConfigs.domain': 1 });
 userSchema.index({ 'resendConfigs.id': 1 });
 userSchema.index({ 'pushTokens.token': 1 });
