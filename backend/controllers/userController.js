@@ -1,39 +1,40 @@
-import User from '../models/userModel.js';
-import bcrypt from 'bcryptjs';
-import { v4 as uuidv4 } from 'uuid';
+import User from "../models/userModel.js";
+import bcrypt from "bcryptjs";
+import { v4 as uuidv4 } from "uuid";
 
 // Get user profile
 // Already correct - it selects everything except password and OTPs
 const getProfile = async (req, res) => {
   try {
     const userId = req.userId;
-    const user = await User.findById(userId).select('-password -otp -twoFactorOTP -resetPasswordOTP');
-    
+    const user = await User.findById(userId).select(
+      "-password -otp -twoFactorOTP -resetPasswordOTP",
+    );
+
     if (!user) {
       return res.status(404).json({
         success: false,
-        message: 'User not found'
+        message: "User not found",
       });
     }
 
     // Log for debugging
-    console.log('📊 User profile fetched:', {
+    console.log("📊 User profile fetched:", {
       email: user.email,
       isEmailVerified: user.isEmailVerified,
-      isTwoFactorEnabled: user.isTwoFactorEnabled
+      isTwoFactorEnabled: user.isTwoFactorEnabled,
     });
 
     res.status(200).json({
       success: true,
-      data: user
+      data: user,
     });
-
   } catch (error) {
-    console.error('Get profile error:', error);
+    console.error("Get profile error:", error);
     res.status(500).json({
       success: false,
-      message: 'Error fetching profile',
-      error: error.message
+      message: "Error fetching profile",
+      error: error.message,
     });
   }
 };
@@ -45,13 +46,13 @@ const updateProfile = async (req, res) => {
     const userId = req.userId;
     const { name, phoneNumber } = req.body;
 
-    console.log('📝 Updating profile for user:', userId);
+    console.log("📝 Updating profile for user:", userId);
 
     const user = await User.findById(userId);
     if (!user) {
       return res.status(404).json({
         success: false,
-        message: 'User not found'
+        message: "User not found",
       });
     }
 
@@ -61,21 +62,24 @@ const updateProfile = async (req, res) => {
 
     // Update profile picture if provided
     if (req.file) {
-      console.log('📸 Updating profile picture:', req.file.filename);
-      
+      console.log("📸 Updating profile picture:", req.file.filename);
+
       // Optional: Delete old profile picture from Cloudinary
       if (user.profilePicture?.publicId) {
         try {
-          const cloudinary = (await import('cloudinary')).v2;
+          const cloudinary = (await import("cloudinary")).v2;
           cloudinary.config({
             cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
             api_key: process.env.CLOUDINARY_API_KEY,
             api_secret: process.env.CLOUDINARY_API_SECRET,
           });
           await cloudinary.uploader.destroy(user.profilePicture.publicId);
-          console.log('🗑️ Deleted old profile picture:', user.profilePicture.publicId);
+          console.log(
+            "🗑️ Deleted old profile picture:",
+            user.profilePicture.publicId,
+          );
         } catch (err) {
-          console.error('Failed to delete old picture:', err);
+          console.error("Failed to delete old picture:", err);
         }
       }
 
@@ -84,12 +88,12 @@ const updateProfile = async (req, res) => {
         publicId: req.file.filename,
         fileName: req.file.originalname,
         fileSize: req.file.size,
-        mimeType: req.file.mimetype
+        mimeType: req.file.mimetype,
       };
     }
 
     await user.save();
-    console.log('✅ Profile updated successfully');
+    console.log("✅ Profile updated successfully");
 
     // Return user without sensitive data
     const userData = {
@@ -101,21 +105,20 @@ const updateProfile = async (req, res) => {
       isEmailVerified: user.isEmailVerified,
       isTwoFactorEnabled: user.isTwoFactorEnabled,
       createdAt: user.createdAt,
-      updatedAt: user.updatedAt
+      updatedAt: user.updatedAt,
     };
 
     res.status(200).json({
       success: true,
-      message: 'Profile updated successfully',
-      data: userData
+      message: "Profile updated successfully",
+      data: userData,
     });
-
   } catch (error) {
-    console.error('Update profile error:', error);
+    console.error("Update profile error:", error);
     res.status(500).json({
       success: false,
-      message: 'Error updating profile',
-      error: error.message
+      message: "Error updating profile",
+      error: error.message,
     });
   }
 };
@@ -129,14 +132,14 @@ const changePassword = async (req, res) => {
     if (!currentPassword || !newPassword) {
       return res.status(400).json({
         success: false,
-        message: 'Current password and new password are required'
+        message: "Current password and new password are required",
       });
     }
 
     if (newPassword.length < 6) {
       return res.status(400).json({
         success: false,
-        message: 'New password must be at least 6 characters'
+        message: "New password must be at least 6 characters",
       });
     }
 
@@ -144,16 +147,19 @@ const changePassword = async (req, res) => {
     if (!user) {
       return res.status(404).json({
         success: false,
-        message: 'User not found'
+        message: "User not found",
       });
     }
 
     // Verify current password
-    const isValidPassword = await bcrypt.compare(currentPassword, user.password);
+    const isValidPassword = await bcrypt.compare(
+      currentPassword,
+      user.password,
+    );
     if (!isValidPassword) {
       return res.status(401).json({
         success: false,
-        message: 'Current password is incorrect'
+        message: "Current password is incorrect",
       });
     }
 
@@ -164,15 +170,14 @@ const changePassword = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      message: 'Password changed successfully'
+      message: "Password changed successfully",
     });
-
   } catch (error) {
-    console.error('Change password error:', error);
+    console.error("Change password error:", error);
     res.status(500).json({
       success: false,
-      message: 'Error changing password',
-      error: error.message
+      message: "Error changing password",
+      error: error.message,
     });
   }
 };
@@ -186,33 +191,35 @@ const toggleTwoFactor = async (req, res) => {
     const userId = req.userId;
     const { enable } = req.body;
 
-    console.log('🔐 Toggling 2FA for user:', userId, 'to:', enable);
+    console.log("🔐 Toggling 2FA for user:", userId, "to:", enable);
 
     const user = await User.findById(userId);
     if (!user) {
       return res.status(404).json({
         success: false,
-        message: 'User not found'
+        message: "User not found",
       });
     }
 
     user.isTwoFactorEnabled = enable;
     await user.save();
 
-    console.log('✅ 2FA toggled successfully. New status:', user.isTwoFactorEnabled);
+    console.log(
+      "✅ 2FA toggled successfully. New status:",
+      user.isTwoFactorEnabled,
+    );
 
     res.status(200).json({
       success: true,
-      message: `2FA ${enable ? 'enabled' : 'disabled'} successfully`,
-      data: { isTwoFactorEnabled: user.isTwoFactorEnabled }
+      message: `2FA ${enable ? "enabled" : "disabled"} successfully`,
+      data: { isTwoFactorEnabled: user.isTwoFactorEnabled },
     });
-
   } catch (error) {
-    console.error('Toggle 2FA error:', error);
+    console.error("Toggle 2FA error:", error);
     res.status(500).json({
       success: false,
-      message: 'Error toggling 2FA',
-      error: error.message
+      message: "Error toggling 2FA",
+      error: error.message,
     });
   }
 };
@@ -226,7 +233,7 @@ const deleteAccount = async (req, res) => {
     if (!password) {
       return res.status(400).json({
         success: false,
-        message: 'Password is required to delete account'
+        message: "Password is required to delete account",
       });
     }
 
@@ -234,7 +241,7 @@ const deleteAccount = async (req, res) => {
     if (!user) {
       return res.status(404).json({
         success: false,
-        message: 'User not found'
+        message: "User not found",
       });
     }
 
@@ -243,7 +250,7 @@ const deleteAccount = async (req, res) => {
     if (!isValidPassword) {
       return res.status(401).json({
         success: false,
-        message: 'Password is incorrect'
+        message: "Password is incorrect",
       });
     }
 
@@ -252,15 +259,14 @@ const deleteAccount = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      message: 'Account deleted successfully'
+      message: "Account deleted successfully",
     });
-
   } catch (error) {
-    console.error('Delete account error:', error);
+    console.error("Delete account error:", error);
     res.status(500).json({
       success: false,
-      message: 'Error deleting account',
-      error: error.message
+      message: "Error deleting account",
+      error: error.message,
     });
   }
 };
@@ -271,5 +277,5 @@ export {
   updateProfile,
   changePassword,
   toggleTwoFactor,
-  deleteAccount
+  deleteAccount,
 };

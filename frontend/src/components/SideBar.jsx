@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { useSelector, useDispatch } from 'react-redux';
 import { 
   Inbox, 
   Send, 
@@ -18,16 +19,40 @@ import {
   Shield,
   Globe,
   AtSign,
-  LayoutGrid
+  LayoutGrid,
+  Crown,
+  Code,
+  Activity
 } from 'lucide-react';
-import { useDispatch } from 'react-redux';
 import { logout } from '../slices/authSlice';
+import { useGetProfileQuery } from '../slices/userApiSlice';
 
 const SideBar = ({ isCollapsed = false, onToggle }) => {
   const navigate = useNavigate();
   const location = useLocation();
   const dispatch = useDispatch();
+  const { userInfo } = useSelector((state) => state.auth); // ← ADD THIS LINE
   const [collapsed, setCollapsed] = useState(isCollapsed);
+  const [hoveredMenu, setHoveredMenu] = useState(null);
+
+  // Fetch user profile to get the role
+  const { data: profileData, isLoading: profileLoading } = useGetProfileQuery();
+  
+  // Get role from profile data or userInfo
+  const userRole = profileData?.data?.role || userInfo?.role || 'user';
+  const isAdmin = userRole === 'admin' || userRole === 'super_admin';
+  const isSuperAdmin = userRole === 'super_admin';
+
+  // Debug log to see what role we're getting
+  useEffect(() => {
+    console.log('📊 User Role Debug:', {
+      profileRole: profileData?.data?.role,
+      userInfoRole: userInfo?.role,
+      finalRole: userRole,
+      isAdmin,
+      isSuperAdmin
+    });
+  }, [profileData, userInfo, userRole, isAdmin, isSuperAdmin]);
 
   const handleToggle = () => {
     const newState = !collapsed;
@@ -40,6 +65,11 @@ const SideBar = ({ isCollapsed = false, onToggle }) => {
     navigate('/login');
   };
 
+  const isActive = (path) => {
+    if (path === '/inbox' && location.pathname === '/') return true;
+    return location.pathname === path;
+  };
+
   const mainNavItems = [
     { id: 'inbox', label: 'Inbox', icon: Inbox, path: '/inbox', badge: null },
     { id: 'starred', label: 'Starred', icon: Star, path: '/starred', badge: null },
@@ -48,10 +78,21 @@ const SideBar = ({ isCollapsed = false, onToggle }) => {
     { id: 'trash', label: 'Trash', icon: Trash2, path: '/trash', badge: null },
   ];
 
-  const emailManagementNavItems = [
+  const emailManagementItems = [
     { id: 'custom-emails', label: 'Custom Emails', icon: AtSign, path: '/custom-emails' },
     { id: 'domains', label: 'Domains', icon: Globe, path: '/domains' },
     { id: 'team', label: 'Team Access', icon: Users, path: '/team' },
+  ];
+
+  const adminItems = [
+    { id: 'admin-users', label: 'Users', icon: Users, path: '/admin/users' },
+    { id: 'admin-stats', label: 'Analytics', icon: Activity, path: '/admin/stats' },
+    { id: 'admin-apps', label: 'App Manager', icon: Code, path: '/admin/apps' },
+  ];
+
+  const superAdminItems = [
+    { id: 'admin-roles', label: 'Role Manager', icon: Crown, path: '/admin/roles' },
+    { id: 'admin-admins', label: 'Admins', icon: Shield, path: '/admin/admins' },
   ];
 
   const bottomNavItems = [
@@ -60,10 +101,132 @@ const SideBar = ({ isCollapsed = false, onToggle }) => {
     { id: 'stats', label: 'Stats', icon: BarChart3, path: '/stats' },
   ];
 
-  const isActive = (path) => {
-    if (path === '/inbox' && location.pathname === '/') return true;
-    return location.pathname === path;
+  const NavItem = ({ item, collapsed: isCollapsed }) => {
+    const Icon = item.icon;
+    const active = isActive(item.path);
+    
+    return (
+      <button
+        onClick={() => navigate(item.path)}
+        className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg transition ${
+          active
+            ? 'bg-purple-50 text-purple-600'
+            : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+        } ${isCollapsed ? 'justify-center' : ''}`}
+        title={isCollapsed ? item.label : ''}
+      >
+        <Icon className={`w-5 h-5 ${active ? 'text-purple-600' : 'text-gray-500'}`} />
+        {!isCollapsed && (
+          <span className={`flex-1 text-left ${active ? 'font-medium' : ''}`}>
+            {item.label}
+          </span>
+        )}
+        {!isCollapsed && item.badge && (
+          <span className="bg-red-500 text-white text-xs px-2 py-0.5 rounded-full">
+            {item.badge}
+          </span>
+        )}
+      </button>
+    );
   };
+
+  const NavSection = ({ title, items, collapsed: isCollapsed, icon: SectionIcon }) => {
+    const [isHovered, setIsHovered] = useState(false);
+    
+    if (!isCollapsed) {
+      // When sidebar is expanded, show as normal section
+      return (
+        <div className="mt-4">
+          <div className="px-3 py-1">
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
+              {title}
+            </p>
+          </div>
+          <div className="space-y-1">
+            {items.map((item) => {
+              const ItemIcon = item.icon;
+              const active = isActive(item.path);
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => navigate(item.path)}
+                  className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg transition ${
+                    active
+                      ? 'bg-purple-50 text-purple-600'
+                      : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+                  }`}
+                >
+                  <ItemIcon className={`w-5 h-5 ${active ? 'text-purple-600' : 'text-gray-500'}`} />
+                  <span className={`flex-1 text-left text-sm ${active ? 'font-medium' : ''}`}>
+                    {item.label}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      );
+    }
+
+    // When sidebar is collapsed, show as icon with floating dropdown on hover
+    return (
+      <div 
+        className="relative"
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
+      >
+        <div className="flex justify-center px-3 py-2">
+          <div className="p-1.5 rounded-lg text-gray-400">
+            <SectionIcon className="w-5 h-5" />
+          </div>
+        </div>
+
+        {/* Floating dropdown that appears to the right */}
+        {isHovered && (
+          <div className="fixed left-20 top-1/2 -translate-y-1/2 bg-white rounded-xl shadow-xl border border-gray-100 min-w-[200px] z-50 overflow-hidden">
+            <div className="p-2">
+              <div className="px-3 py-2 text-xs font-semibold text-purple-600 border-b border-gray-100">
+                {title}
+              </div>
+              <div className="py-1">
+                {items.map((item) => {
+                  const ItemIcon = item.icon;
+                  const active = isActive(item.path);
+                  return (
+                    <button
+                      key={item.id}
+                      onClick={() => {
+                        navigate(item.path);
+                        setIsHovered(false);
+                      }}
+                      className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg transition ${
+                        active
+                          ? 'bg-purple-50 text-purple-600'
+                          : 'text-gray-600 hover:bg-gray-100'
+                      }`}
+                    >
+                      <ItemIcon className={`w-4 h-4 ${active ? 'text-purple-600' : 'text-gray-500'}`} />
+                      <span className="text-sm">{item.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  if (profileLoading) {
+    return (
+      <div className={`hidden lg:flex lg:flex-col bg-white border-r border-gray-200 transition-all duration-300 fixed left-0 top-0 bottom-0 z-40 ${collapsed ? 'w-20' : 'w-64'}`}>
+        <div className="flex items-center justify-center p-4">
+          <div className="w-6 h-6 border-2 border-purple-600 border-t-transparent rounded-full animate-spin"></div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div 
@@ -111,81 +274,37 @@ const SideBar = ({ isCollapsed = false, onToggle }) => {
 
       {/* Main Navigation */}
       <nav className="flex-1 px-2 space-y-1 overflow-y-auto">
-        {mainNavItems.map((item) => {
-          const Icon = item.icon;
-          const active = isActive(item.path);
-          
-          return (
-            <button
-              key={item.id}
-              onClick={() => navigate(item.path)}
-              className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg transition ${
-                active
-                  ? 'bg-purple-50 text-purple-600'
-                  : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
-              } ${collapsed ? 'justify-center' : ''}`}
-              title={collapsed ? item.label : ''}
-            >
-              <Icon className={`w-5 h-5 ${active ? 'text-purple-600' : 'text-gray-500'}`} />
-              {!collapsed && (
-                <span className={`flex-1 text-left ${active ? 'font-medium' : ''}`}>
-                  {item.label}
-                </span>
-              )}
-              {!collapsed && item.badge && (
-                <span className="bg-red-500 text-white text-xs px-2 py-0.5 rounded-full">
-                  {item.badge}
-                </span>
-              )}
-            </button>
-          );
-        })}
-
-        {/* Divider */}
-        {!collapsed && (
-          <div className="my-4 border-t border-gray-200" />
-        )}
-        {collapsed && (
-          <div className="my-2 border-t border-gray-200" />
-        )}
-
-        {/* Section Header */}
-        {!collapsed && (
-          <div className="px-3 py-1">
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Email Management</p>
-          </div>
-        )}
-        {collapsed && (
-          <div className="flex justify-center my-2">
-            <div className="w-8 h-px bg-gray-200"></div>
-          </div>
-        )}
+        {mainNavItems.map((item) => (
+          <NavItem key={item.id} item={item} collapsed={collapsed} />
+        ))}
 
         {/* Email Management Section */}
-        {emailManagementNavItems.map((item) => {
-          const Icon = item.icon;
-          const active = isActive(item.path);
-          
-          return (
-            <button
-              key={item.id}
-              onClick={() => navigate(item.path)}
-              className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg transition ${
-                active
-                  ? 'bg-purple-50 text-purple-600'
-                  : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
-              } ${collapsed ? 'justify-center' : ''}`}
-              title={collapsed ? item.label : ''}
-            >
-              <Icon className={`w-5 h-5 ${active ? 'text-purple-600' : 'text-gray-500'}`} />
-              {!collapsed && (
-                <span className={`flex-1 text-left ${active ? 'font-medium' : ''}`}>
-                  {item.label}
-                </span>
-              )}
-            </button>
-          );
-        })}
+        <NavSection 
+          title="Email Management" 
+          items={emailManagementItems} 
+          collapsed={collapsed}
+          icon={LayoutGrid}
+        />
+
+        {/* Admin Section - Only visible for admin/super_admin */}
+        {isAdmin && (
+          <NavSection 
+            title="Admin" 
+            items={adminItems} 
+            collapsed={collapsed}
+            icon={Shield}
+          />
+        )}
+
+        {/* Super Admin Section - Only visible for super_admin */}
+        {isSuperAdmin && (
+          <NavSection 
+            title="Super Admin" 
+            items={superAdminItems} 
+            collapsed={collapsed}
+            icon={Crown}
+          />
+        )}
       </nav>
 
       {/* Bottom Navigation */}
@@ -214,6 +333,31 @@ const SideBar = ({ isCollapsed = false, onToggle }) => {
             </button>
           );
         })}
+        
+        {/* Role indicator */}
+        {!collapsed && isAdmin && (
+          <div className="px-3 py-1 mt-2">
+            <span className={`text-xs font-medium px-2 py-1 rounded-full ${
+              isSuperAdmin 
+                ? 'bg-amber-100 text-amber-700' 
+                : 'bg-purple-100 text-purple-700'
+            }`}>
+              {isSuperAdmin ? 'Super Admin' : 'Admin'}
+            </span>
+          </div>
+        )}
+        
+        {collapsed && isAdmin && (
+          <div className="flex justify-center mt-2">
+            <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
+              isSuperAdmin 
+                ? 'bg-amber-100 text-amber-700' 
+                : 'bg-purple-100 text-purple-700'
+            }`}>
+              {isSuperAdmin ? 'SA' : 'A'}
+            </div>
+          </div>
+        )}
         
         {/* Divider before logout */}
         <div className="my-2 border-t border-gray-200" />

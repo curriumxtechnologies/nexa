@@ -12,6 +12,8 @@ import userRoutes from './routes/userRoutes.js';
 import emailRoutes from './routes/emailRoutes.js';
 import settingsRoutes from './routes/settingsRoutes.js';
 import notificationsRoutes from './routes/notificationsRoutes.js';
+import adminRoutes from './routes/adminRoutes.js';
+import appRoutes from './routes/appRoutes.js';
 
 
 dotenv.config()
@@ -53,6 +55,8 @@ app.use('/api/users', userRoutes);
 app.use('/api/email', emailRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/notifications', notificationsRoutes);
+app.use('/api/admin', adminRoutes);
+app.use('/api/app', appRoutes);
 
 
 

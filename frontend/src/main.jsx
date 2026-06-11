@@ -7,6 +7,8 @@ import store from "./store";
 import { createBrowserRouter, RouterProvider } from "react-router-dom";
 import { Provider, useDispatch, useSelector } from "react-redux";
 
+import Homepage from "./screens/Homepage.jsx";
+
 import Login from "./screens/Login.jsx";
 import Register from "./screens/Register.jsx";
 import VerifyEmail from "./screens/VerifyEmail.jsx";
@@ -27,7 +29,15 @@ import EmailDetails from "./screens/EmailDetails.jsx";
 import AcceptInvite from "./screens/AcceptInvite.jsx";
 import PrivateRoute from "./components/PrivateRoute.jsx";
 
+// Admin Routes
+import AdminUsers from "./screens/AdminUsers.jsx";
+import AdminAnalytics from "./screens/AdminAnalytics.jsx";
+import AdminAppManager from "./screens/AdminAppManager.jsx";
+import SAdminRoleManager from "./screens/SAdminRoleManager.jsx";
+import AdminAdmins from "./screens/AdminAdmins.jsx";
+
 import { useMobilePushNotifications } from './hooks/useMobilePushNotifications';
+import AppUpdateChecker from './components/AppUpdateChecker.jsx';
 
 // Component to handle push notification initialization
 const PushNotificationInitializer = () => {
@@ -56,7 +66,7 @@ const router = createBrowserRouter([
     path: "/",
     element: <App />,
     children: [
-      { index: true, element: <a href="/login">Login page</a> },
+      { index: true, element: <Homepage /> },
       { path: "login", element: <Login /> },
       { path: "register", element: <Register /> },
       { path: "verify-email", element: <VerifyEmail /> },
@@ -81,6 +91,13 @@ const router = createBrowserRouter([
               { path: "stats", element: <Stats /> },
               { path: "custom-emails", element: <CustomEmails /> },
               { path: "email/:emailId", element: <EmailDetails /> },
+
+              // Admin routes
+              { path: "admin/users", element: <AdminUsers /> },
+              { path: "admin/stats", element: <AdminAnalytics /> },
+              { path: "admin/apps", element: <AdminAppManager /> },
+              { path: "admin/roles", element: <SAdminRoleManager /> },
+              { path: "admin/admins", element: <AdminAdmins /> },
             ]
           }
         ]
@@ -108,13 +125,14 @@ if (window.Capacitor?.isNativePlatform()) {
   console.log('📱 Running on Capacitor - using native push notifications');
 }
 
-// Root component with push notification initializer
+// Root component with push notification initializer and app update checker
 const Root = () => {
   return (
     <Provider store={store}>
       <StrictMode>
         <PushNotificationInitializer />
         <RouterProvider router={router} />
+        <AppUpdateChecker />
       </StrictMode>
     </Provider>
   );
