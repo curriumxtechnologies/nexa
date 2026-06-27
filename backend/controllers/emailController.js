@@ -338,7 +338,7 @@ const receiveEmail = async (req, res) => {
       });
     }
 
-    // Find which custom email this belongs to
+    // Find custom email
     const customEmail = await CustomEmail.findOne({
       email: toEmail.toLowerCase(),
       isActive: true
@@ -359,7 +359,7 @@ const receiveEmail = async (req, res) => {
       });
     }
 
-    // Find the Resend config
+    // Find Resend config
     const resendConfig = user.resendConfigs.find(
       c => (c.id === customEmail.resendConfigId ||
         c._id?.toString() === customEmail.resendConfigId?.toString())
@@ -383,19 +383,18 @@ const receiveEmail = async (req, res) => {
           'svix-signature': req.headers['svix-signature'],
         });
       } catch (err) {
-        console.error('Webhook signature verification failed for domain:', resendConfig.domain);
+        console.error('Webhook signature verification failed:', resendConfig.domain);
         return res.status(401).json({
           success: false,
           message: 'Invalid webhook signature'
         });
       }
-    } else {
-      console.warn(`No webhook secret configured for domain: ${resendConfig.domain}. Skipping signature verification.`);
     }
 
-    // ========== FETCH FULL EMAIL CONTENT FROM RESEND ==========
+    // Fetch full email content from Resend
     let emailHtml = '';
     let emailText = '';
+    let attachments = emailPayload.attachments || [];
 
     if (email_id) {
       const resend = new Resend(resendConfig.apiKey);
@@ -404,31 +403,16 @@ const receiveEmail = async (req, res) => {
         if (!fetchError && emailData) {
           emailHtml = emailData.html || '';
           emailText = emailData.text || '';
-          console.log(`✅ Successfully fetched email body for ${email_id}`);
-        } else {
-          console.error('Failed to fetch email content:', fetchError);
-        }
-      } catch (fetchError) {
-        console.error('Error fetching email from Resend:', fetchError);
-      }
-    }
-
-    // ========== PROCESS ATTACHMENTS ==========
-    // Use attachments from webhook payload (if any)
-    let attachments = emailPayload.attachments || [];
-    // If Resend API gave us more complete attachments, use those instead
-    if (email_id) {
-      const resend = new Resend(resendConfig.apiKey);
-      try {
-        const { data: emailData } = await resend.emails.receiving.get(email_id);
-        if (emailData && emailData.attachments && emailData.attachments.length > 0) {
-          attachments = emailData.attachments;
+          if (emailData.attachments && emailData.attachments.length > 0) {
+            attachments = emailData.attachments;
+          }
         }
       } catch (err) {
-        // Silent fail – we already have attachments from webhook
+        console.error('Error fetching email from Resend:', err);
       }
     }
 
+    // ─── Process Attachments ───────────────────────────────
     const processedAttachments = [];
 
     for (const attachment of attachments) {
@@ -440,16 +424,15 @@ const receiveEmail = async (req, res) => {
       let url = attachment.url || null;
       let publicId = null;
 
-      // If we have base64 content and no URL, try uploading to Cloudinary
+      // If we have base64 content and no URL yet
       if (!url && attachment.content) {
         try {
-          // Prepare base64 data
           let base64Data = attachment.content;
           if (base64Data.includes(';base64,')) {
             base64Data = base64Data.split(';base64,')[1];
           }
 
-          // Determine resource type
+          // Try uploading to Cloudinary
           let resourceType = 'auto';
           if (mimeType.startsWith('image/')) resourceType = 'image';
           else if (mimeType.startsWith('video/')) resourceType = 'video';
@@ -465,25 +448,39 @@ const receiveEmail = async (req, res) => {
           );
           url = uploadResult.secure_url;
           publicId = uploadResult.public_id;
-          console.log(`✅ Uploaded attachment: ${filename}`);
+          console.log(`✅ Uploaded attachment: ${filename} -> ${url}`);
         } catch (uploadError) {
-          console.error(`Failed to upload attachment ${filename}:`, uploadError);
-          // Keep url = null; the frontend will show a placeholder
+          console.error(`Failed to upload attachment ${filename}, using data URI fallback.`, uploadError);
+          // Fallback: build a data URI directly from the base64 content
+          // Ensure we have a proper data URI
+          if (!attachment.content.startsWith('data:')) {
+            url = `data:${mimeType};base64,${attachment.content}`;
+          } else {
+            url = attachment.content; // already a data URI
+          }
         }
+      } else if (!url && !attachment.content) {
+        // No URL and no content – skip this attachment entirely
+        console.warn(`Skipping attachment "${filename}" – no URL or content.`);
+        continue;
       }
 
-      processedAttachments.push({
-        filename,
-        originalName: filename,
-        url,
-        publicId,
-        fileSize: size,
-        mimeType,
-        cid,
-      });
+      // At this point, url is either a Cloudinary URL or a data URI (or null if skipped)
+      // But we only push if url exists
+      if (url) {
+        processedAttachments.push({
+          filename,
+          originalName: filename,
+          url,
+          publicId,
+          fileSize: size,
+          mimeType,
+          cid,
+        });
+      }
     }
 
-    // ========== SAVE EMAIL ==========
+    // ─── Save Email ──────────────────────────────────────────
     const emailUuid = uuidv4();
     const receivedEmail = new Email({
       userId: user._id,
@@ -507,7 +504,7 @@ const receiveEmail = async (req, res) => {
 
     await receivedEmail.save();
 
-    // ========== SEND NOTIFICATIONS ==========
+    // ─── Notifications & Forwarding (unchanged) ──────────────
     const preview = (emailHtml || emailText || '')
       .replace(/<[^>]*>/g, '')
       .substring(0, 100);
@@ -519,7 +516,6 @@ const receiveEmail = async (req, res) => {
       id: emailUuid
     });
 
-    // Forward to user's forward email if set
     if (customEmail.forwardToEmail && resendConfig.isVerified) {
       const resend = new Resend(resendConfig.apiKey);
       try {
