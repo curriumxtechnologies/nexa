@@ -406,32 +406,59 @@ const receiveEmail = async (req, res) => {
           emailText = emailData.text || '';
           console.log(`✅ Successfully fetched email body for ${email_id}`);
 
-          // --- Look for attachments and embed them into the HTML content ---
+          // ---------- Process attachments ----------
           const attachments = emailData.attachments || [];
           if (attachments.length > 0) {
             console.log(`📎 Found ${attachments.length} attachments. Embedding into content.`);
+
             let attachmentLinks = '<br/><br/><strong>Attachments:</strong><br/>';
+
             for (const att of attachments) {
+              // Log the full attachment object to see all fields
+              console.log('📎 Full attachment object:', JSON.stringify(att, null, 2));
+
+              // ---- Robust URL/content extraction (same as frontend) ----
               const filename = att.filename || att.name || 'file';
-              const mimeType = att.mimetype || att.type || 'application/octet-stream';
-              let href = att.url || null;
-              if (!href && att.content) {
-                // Build data URI from base64 content
-                let base64 = att.content;
-                if (!base64.startsWith('data:')) {
-                  href = `data:${mimeType};base64,${base64}`;
-                } else {
-                  href = base64;
+              const mimeType = att.mimetype || att.type || att.contentType || 'application/octet-stream';
+
+              let href = null;
+
+              // 1. Try direct URL fields
+              const urlFields = ['url', 'fileUrl', 'downloadUrl', 'location', 's3Url', 'path', 'href', 'link'];
+              for (const field of urlFields) {
+                if (att[field]) {
+                  href = att[field];
+                  break;
                 }
               }
+
+              // 2. If no URL, try base64 content fields
+              if (!href) {
+                const base64Fields = ['content', 'data', 'base64', 'fileContent'];
+                for (const field of base64Fields) {
+                  const value = att[field];
+                  if (value) {
+                    if (typeof value === 'string' && value.startsWith('data:')) {
+                      href = value;
+                    } else {
+                      // Build data URI
+                      href = `data:${mimeType};base64,${value}`;
+                    }
+                    break;
+                  }
+                }
+              }
+
               if (href) {
+                // If it's a data URI, we keep it as-is; otherwise it's a URL
                 attachmentLinks += `<a href="${href}" download="${filename}">${filename}</a><br/>`;
               } else {
                 attachmentLinks += `${filename} (unavailable)<br/>`;
                 console.warn(`Attachment "${filename}" has no URL or content.`);
               }
             }
-            // Append attachment links to the HTML content
+
+            // Append to the HTML content
             emailHtml += attachmentLinks;
           }
         } else {
@@ -442,7 +469,7 @@ const receiveEmail = async (req, res) => {
       }
     }
 
-    // ========== SAVE EMAIL (with attachments embedded in content) ==========
+    // ========== SAVE EMAIL (with attachments embedded) ==========
     const emailUuid = uuidv4();
     const receivedEmail = new Email({
       userId: user._id,
@@ -457,7 +484,7 @@ const receiveEmail = async (req, res) => {
       subject: subject || '(No Subject)',
       content: emailHtml || emailText || '',
       contentType: emailHtml ? 'html' : 'text',
-      attachments: [], // empty array – we're embedding attachments in content
+      attachments: [], // empty array to avoid validation errors
       status: 'received',
       receivedAt: new Date(),
       webhookData: req.body,
