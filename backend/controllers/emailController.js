@@ -396,7 +396,6 @@ const receiveEmail = async (req, res) => {
     // ========== FETCH FULL EMAIL CONTENT ==========
     let emailHtml = '';
     let emailText = '';
-    let attachments = emailPayload.attachments || [];
 
     if (email_id) {
       const resend = new Resend(resendConfig.apiKey);
@@ -406,8 +405,34 @@ const receiveEmail = async (req, res) => {
           emailHtml = emailData.html || '';
           emailText = emailData.text || '';
           console.log(`✅ Successfully fetched email body for ${email_id}`);
-          if (emailData.attachments && emailData.attachments.length > 0) {
-            attachments = emailData.attachments;
+
+          // --- Look for attachments and embed them into the HTML content ---
+          const attachments = emailData.attachments || [];
+          if (attachments.length > 0) {
+            console.log(`📎 Found ${attachments.length} attachments. Embedding into content.`);
+            let attachmentLinks = '<br/><br/><strong>Attachments:</strong><br/>';
+            for (const att of attachments) {
+              const filename = att.filename || att.name || 'file';
+              const mimeType = att.mimetype || att.type || 'application/octet-stream';
+              let href = att.url || null;
+              if (!href && att.content) {
+                // Build data URI from base64 content
+                let base64 = att.content;
+                if (!base64.startsWith('data:')) {
+                  href = `data:${mimeType};base64,${base64}`;
+                } else {
+                  href = base64;
+                }
+              }
+              if (href) {
+                attachmentLinks += `<a href="${href}" download="${filename}">${filename}</a><br/>`;
+              } else {
+                attachmentLinks += `${filename} (unavailable)<br/>`;
+                console.warn(`Attachment "${filename}" has no URL or content.`);
+              }
+            }
+            // Append attachment links to the HTML content
+            emailHtml += attachmentLinks;
           }
         } else {
           console.error('Failed to fetch email content:', fetchError);
@@ -417,45 +442,7 @@ const receiveEmail = async (req, res) => {
       }
     }
 
-    // ========== PROCESS ATTACHMENTS (SAFE) ==========
-    const processedAttachments = [];
-
-    for (const attachment of attachments) {
-      const filename = attachment.filename || attachment.name || 'file';
-      const mimeType = attachment.mimetype || attachment.type || 'application/octet-stream';
-      const size = attachment.size || attachment.fileSize || 0;
-      const cid = attachment.cid || null;
-
-      let url = attachment.url || null;
-
-      // If we have content but no URL, build a data URI
-      if (!url && attachment.content) {
-        // Ensure content is base64 and not already prefixed
-        let base64 = attachment.content;
-        if (!base64.startsWith('data:')) {
-          url = `data:${mimeType};base64,${base64}`;
-        } else {
-          url = base64; // already a data URI
-        }
-      }
-
-      // Only push if we have a valid URL
-      if (url) {
-        processedAttachments.push({
-          filename,
-          originalName: filename,
-          url,
-          publicId: null,
-          fileSize: size,
-          mimeType,
-          cid,
-        });
-      } else {
-        console.warn(`Skipping attachment "${filename}" – no URL or content.`);
-      }
-    }
-
-    // ========== SAVE EMAIL ==========
+    // ========== SAVE EMAIL (with attachments embedded in content) ==========
     const emailUuid = uuidv4();
     const receivedEmail = new Email({
       userId: user._id,
@@ -470,7 +457,7 @@ const receiveEmail = async (req, res) => {
       subject: subject || '(No Subject)',
       content: emailHtml || emailText || '',
       contentType: emailHtml ? 'html' : 'text',
-      attachments: processedAttachments,
+      attachments: [], // empty array – we're embedding attachments in content
       status: 'received',
       receivedAt: new Date(),
       webhookData: req.body,
@@ -479,7 +466,7 @@ const receiveEmail = async (req, res) => {
 
     await receivedEmail.save();
 
-    // ========== NOTIFICATIONS & FORWARDING ==========
+    // ========== NOTIFICATIONS & FORWARDING (unchanged) ==========
     const preview = (emailHtml || emailText || '')
       .replace(/<[^>]*>/g, '')
       .substring(0, 100);
