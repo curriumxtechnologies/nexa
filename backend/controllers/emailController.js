@@ -359,7 +359,7 @@ const receiveEmail = async (req, res) => {
       });
     }
 
-    // ========== FIND RESEND CONFIG (MUST BE DEFINED) ==========
+    // Find Resend config
     const resendConfig = user.resendConfigs.find(
       c => (c.id === customEmail.resendConfigId ||
         c._id?.toString() === customEmail.resendConfigId?.toString())
@@ -393,9 +393,10 @@ const receiveEmail = async (req, res) => {
       console.warn(`No webhook secret configured for domain: ${resendConfig.domain}. Skipping signature verification.`);
     }
 
-    // ========== FETCH FULL EMAIL CONTENT FROM RESEND ==========
+    // ========== FETCH FULL EMAIL CONTENT ==========
     let emailHtml = '';
     let emailText = '';
+    let attachments = emailPayload.attachments || [];
 
     if (email_id) {
       const resend = new Resend(resendConfig.apiKey);
@@ -405,6 +406,9 @@ const receiveEmail = async (req, res) => {
           emailHtml = emailData.html || '';
           emailText = emailData.text || '';
           console.log(`✅ Successfully fetched email body for ${email_id}`);
+          if (emailData.attachments && emailData.attachments.length > 0) {
+            attachments = emailData.attachments;
+          }
         } else {
           console.error('Failed to fetch email content:', fetchError);
         }
@@ -413,34 +417,43 @@ const receiveEmail = async (req, res) => {
       }
     }
 
-    // ========== PROCESS ATTACHMENTS (if any) ==========
-    // Use whatever attachments are in the webhook payload or API response.
-    // We do NOT upload or modify them – just store as-is.
-    let attachments = emailPayload.attachments || [];
+    // ========== PROCESS ATTACHMENTS (SAFE) ==========
+    const processedAttachments = [];
 
-    // If we fetched from API, use those attachments (they might be more complete)
-    if (email_id) {
-      const resend = new Resend(resendConfig.apiKey);
-      try {
-        const { data: emailData } = await resend.emails.receiving.get(email_id);
-        if (emailData && emailData.attachments && emailData.attachments.length > 0) {
-          attachments = emailData.attachments;
+    for (const attachment of attachments) {
+      const filename = attachment.filename || attachment.name || 'file';
+      const mimeType = attachment.mimetype || attachment.type || 'application/octet-stream';
+      const size = attachment.size || attachment.fileSize || 0;
+      const cid = attachment.cid || null;
+
+      let url = attachment.url || null;
+
+      // If we have content but no URL, build a data URI
+      if (!url && attachment.content) {
+        // Ensure content is base64 and not already prefixed
+        let base64 = attachment.content;
+        if (!base64.startsWith('data:')) {
+          url = `data:${mimeType};base64,${base64}`;
+        } else {
+          url = base64; // already a data URI
         }
-      } catch (err) {
-        // ignore, keep existing
+      }
+
+      // Only push if we have a valid URL
+      if (url) {
+        processedAttachments.push({
+          filename,
+          originalName: filename,
+          url,
+          publicId: null,
+          fileSize: size,
+          mimeType,
+          cid,
+        });
+      } else {
+        console.warn(`Skipping attachment "${filename}" – no URL or content.`);
       }
     }
-
-    // Format attachments for storage (keep original data)
-    const processedAttachments = attachments.map(att => ({
-      filename: att.filename || att.name || 'file',
-      originalName: att.filename || att.name || 'file',
-      url: att.url || att.content || null,  // may be null if no URL/content
-      publicId: null,
-      fileSize: att.size || 0,
-      mimeType: att.mimetype || att.type || 'application/octet-stream',
-      cid: att.cid || null,
-    }));
 
     // ========== SAVE EMAIL ==========
     const emailUuid = uuidv4();
@@ -466,7 +479,7 @@ const receiveEmail = async (req, res) => {
 
     await receivedEmail.save();
 
-    // ========== SEND NOTIFICATIONS ==========
+    // ========== NOTIFICATIONS & FORWARDING ==========
     const preview = (emailHtml || emailText || '')
       .replace(/<[^>]*>/g, '')
       .substring(0, 100);
@@ -478,7 +491,6 @@ const receiveEmail = async (req, res) => {
       id: emailUuid
     });
 
-    // Forward to user's forward email if set
     if (customEmail.forwardToEmail && resendConfig.isVerified) {
       const resend = new Resend(resendConfig.apiKey);
       try {
