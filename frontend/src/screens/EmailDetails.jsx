@@ -24,6 +24,11 @@ import {
   ChevronDown,
   ChevronUp,
   MoreVertical,
+  FileText,
+  File,
+  FileArchive,
+  FileImage,
+  ZoomIn,
 } from 'lucide-react';
 import { format } from 'date-fns';
 
@@ -40,16 +45,9 @@ const getInitials = (email) => (email?.split('@')[0] || '?').slice(0, 2).toUpper
 
 const getAvatarColor = (email) => {
   const colors = [
-    'bg-rose-500',
-    'bg-orange-500',
-    'bg-amber-500',
-    'bg-green-500',
-    'bg-teal-500',
-    'bg-cyan-500',
-    'bg-blue-500',
-    'bg-indigo-500',
-    'bg-purple-500',
-    'bg-pink-500',
+    'bg-rose-500', 'bg-orange-500', 'bg-amber-500', 'bg-green-500',
+    'bg-teal-500', 'bg-cyan-500', 'bg-blue-500', 'bg-indigo-500',
+    'bg-purple-500', 'bg-pink-500',
   ];
   let hash = 0;
   for (let i = 0; i < (email?.length || 0); i++) hash = email.charCodeAt(i) + ((hash << 5) - hash);
@@ -68,7 +66,6 @@ const formatDayLabel = (d) => {
 
 const getPlainText = (c) => c?.replace(/<[^>]*>/g, '') || '';
 
-// Clean HTML content to plain text for reply/forward editor
 const cleanHtmlContent = (html) => {
   if (!html) return '';
   const tempDiv = document.createElement('div');
@@ -78,7 +75,6 @@ const cleanHtmlContent = (html) => {
   return text.trim();
 };
 
-// Format quoted content for replies
 const formatQuotedContent = (originalEmail, mode) => {
   const date = format(new Date(originalEmail.receivedAt || originalEmail.createdAt), 'MMM d, yyyy \'at\' h:mm a');
   const fromName = originalEmail.from?.name || originalEmail.from?.email;
@@ -99,13 +95,116 @@ const formatQuotedContent = (originalEmail, mode) => {
   return cleanBody;
 };
 
+// ─── Attachment utilities ────────────────────────────────────────────────────
+
+// Get file extension from filename
+const getExtension = (filename) => filename?.split('.').pop().toLowerCase() || '';
+
+// Get a displayable URL for an attachment.
+// Different backends/serializers can name this field differently, so we check
+// every variant we've seen rather than assuming "url" or "content" only.
+// This is the fix for PDFs (and other non-image files) not rendering/opening:
+// previously only `url`, `content`, and `data` were checked, and many APIs put
+// the file under `fileUrl`, `downloadUrl`, `path`, `location`, or `s3Url`.
+const getAttachmentUrl = (attachment) => {
+  if (!attachment) return null;
+
+  const directUrlFields = ['url', 'fileUrl', 'downloadUrl', 'location', 's3Url', 'path', 'href', 'link'];
+  for (const field of directUrlFields) {
+    if (attachment[field]) return attachment[field];
+  }
+
+  // Base64 payload under various possible field names
+  const base64Fields = ['content', 'data', 'base64', 'fileContent'];
+  for (const field of base64Fields) {
+    const value = attachment[field];
+    if (value) {
+      if (typeof value === 'string' && value.startsWith('data:')) return value;
+      const mimeType = attachment.mimeType || attachment.contentType || attachment.type || 'application/octet-stream';
+      return `data:${mimeType};base64,${value}`;
+    }
+  }
+
+  return null;
+};
+
+const getMimeType = (attachment) =>
+  attachment?.mimeType || attachment?.contentType || attachment?.type || '';
+
+// Get file icon based on mime type or extension
+const getFileIcon = (mimeType, filename) => {
+  const ext = getExtension(filename);
+  if (mimeType?.startsWith('image/')) return <FileImage className="w-4 h-4 text-blue-500" />;
+  if (mimeType === 'application/pdf' || ext === 'pdf') return <FileText className="w-4 h-4 text-red-500" />;
+  if (mimeType?.includes('word') || ['doc', 'docx'].includes(ext)) return <FileText className="w-4 h-4 text-blue-700" />;
+  if (mimeType?.includes('excel') || ['xls', 'xlsx'].includes(ext)) return <FileText className="w-4 h-4 text-green-600" />;
+  if (mimeType?.includes('zip') || ['zip', 'rar'].includes(ext)) return <FileArchive className="w-4 h-4 text-yellow-600" />;
+  return <File className="w-4 h-4 text-gray-500" />;
+};
+
+// ─── Image Preview Modal ──────────────────────────────────────────────────────
+
+const ImagePreviewModal = ({ src, fileName, onClose }) => {
+  if (!src) return null;
+  return (
+    <div
+      className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      <div className="relative max-w-4xl max-h-[90vh]" onClick={(e) => e.stopPropagation()}>
+        <button
+          className="absolute -top-10 right-0 text-white text-2xl hover:text-gray-300"
+          onClick={onClose}
+          aria-label="Close preview"
+        >
+          ✕
+        </button>
+        <img
+          src={src}
+          alt={fileName || 'Preview'}
+          className="max-w-full max-h-[85vh] object-contain rounded-lg shadow-2xl"
+        />
+        {fileName && (
+          <div className="absolute bottom-0 left-0 right-0 bg-black/60 text-white text-xs px-3 py-2 rounded-b-lg flex items-center justify-between">
+            <span className="truncate">{fileName}</span>
+            <a
+              href={src}
+              download={fileName}
+              onClick={(e) => e.stopPropagation()}
+              className="flex items-center gap-1 ml-3 flex-shrink-0 hover:text-purple-300"
+            >
+              <Download className="w-3.5 h-3.5" /> Download
+            </a>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
 // ─── Email Bubble ──────────────────────────────────────────────────────────────
 
-const EmailBubble = ({ email, isSent, receivingAccount, onStar, onDelete, onArchive, onReply }) => {
+const EmailBubble = ({
+  email,
+  isSent,
+  receivingAccount,
+  onStar,
+  onDelete,
+  onArchive,
+  onReply,
+  onPreviewImage,
+}) => {
   const [expanded, setExpanded] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const preview = getPlainText(email.content).slice(0, 120);
   const isLong = getPlainText(email.content).length > 120 || email.content?.includes('<');
+
+  // Log attachments for debugging
+  useEffect(() => {
+    if (email.attachments?.length) {
+      console.log('📎 Attachments for email', email.emailId, email.attachments);
+    }
+  }, [email]);
 
   return (
     <div className={`flex flex-col mb-3 ${isSent ? 'items-end' : 'items-start'}`}>
@@ -191,37 +290,114 @@ const EmailBubble = ({ email, isSent, receivingAccount, onStar, onDelete, onArch
               dangerouslySetInnerHTML={{ __html: email.content }}
             />
 
-            {email.attachments?.length > 0 && (
+            {/* ─── ATTACHMENTS ─── */}
+            {email.attachments && email.attachments.length > 0 && (
               <div className="mt-3 space-y-2">
                 <p className={`text-xs font-medium ${isSent ? 'text-purple-200' : 'text-gray-500'}`}>
                   Attachments ({email.attachments.length})
                 </p>
-                {email.attachments.map((att, i) => (
-                  <div
-                    key={i}
-                    onClick={() => window.open(att.url, '_blank')}
-                    className={`flex items-center gap-2 p-2 rounded-lg cursor-pointer ${
-                      isSent ? 'bg-purple-500 hover:bg-purple-400' : 'bg-gray-50 hover:bg-gray-100'
-                    }`}
-                  >
-                    <div
-                      className={`w-8 h-8 rounded flex items-center justify-center flex-shrink-0 ${
-                        isSent ? 'bg-purple-700' : 'bg-purple-100'
-                      }`}
-                    >
-                      <Paperclip className={`w-4 h-4 ${isSent ? 'text-white' : 'text-purple-600'}`} />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className={`text-xs font-medium truncate ${isSent ? 'text-white' : 'text-gray-700'}`}>
-                        {att.filename}
-                      </p>
-                      <p className={`text-xs ${isSent ? 'text-purple-200' : 'text-gray-400'}`}>
-                        {Math.round(att.fileSize / 1024)} KB
-                      </p>
-                    </div>
-                    <Download className={`w-3.5 h-3.5 ${isSent ? 'text-purple-200' : 'text-gray-400'}`} />
-                  </div>
-                ))}
+                <div className="flex flex-wrap gap-2">
+                  {email.attachments.map((att, i) => {
+                    const fileUrl = getAttachmentUrl(att);
+                    const mimeType = getMimeType(att);
+                    const fileName = att.filename || att.originalName || att.name || 'file';
+                    const fileSize = att.fileSize || att.size || 0;
+                    const isImage = mimeType?.startsWith('image/') && !!fileUrl;
+
+                    // If we genuinely have no URL/base64 for this file, say so —
+                    // but this should now be rare since getAttachmentUrl checks
+                    // many more field name variants.
+                    if (!fileUrl) {
+                      return (
+                        <div
+                          key={i}
+                          className={`flex items-center gap-2 p-2 rounded-lg ${
+                            isSent ? 'bg-purple-500' : 'bg-gray-50'
+                          }`}
+                        >
+                          <div className={`w-8 h-8 rounded flex items-center justify-center ${isSent ? 'bg-purple-700' : 'bg-gray-200'}`}>
+                            <File className={`w-4 h-4 ${isSent ? 'text-white' : 'text-gray-500'}`} />
+                          </div>
+                          <span className={`text-xs ${isSent ? 'text-white' : 'text-gray-600'}`}>
+                            {fileName} (no URL)
+                          </span>
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div
+                        key={i}
+                        className={`flex items-center gap-2 p-2 rounded-lg ${
+                          isSent ? 'bg-purple-500 hover:bg-purple-400' : 'bg-gray-50 hover:bg-gray-100'
+                        } border border-transparent hover:border-gray-200 transition`}
+                      >
+                        {/* Thumbnail / Icon */}
+                        <div
+                          className="relative w-10 h-10 rounded flex items-center justify-center flex-shrink-0 cursor-pointer group"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (isImage) {
+                              onPreviewImage({ src: fileUrl, fileName });
+                            } else {
+                              window.open(fileUrl, '_blank', 'noopener,noreferrer');
+                            }
+                          }}
+                        >
+                          {isImage ? (
+                            <>
+                              <img
+                                src={fileUrl}
+                                alt={fileName}
+                                className="w-full h-full object-cover rounded"
+                              />
+                              {/* Zoom affordance on hover so it's clear it's previewable */}
+                              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 rounded flex items-center justify-center transition">
+                                <ZoomIn className="w-4 h-4 text-white opacity-0 group-hover:opacity-100 transition" />
+                              </div>
+                            </>
+                          ) : (
+                            <div className={`w-full h-full rounded flex items-center justify-center ${isSent ? 'bg-purple-700' : 'bg-purple-100'}`}>
+                              {getFileIcon(mimeType, fileName)}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* File info */}
+                        <div
+                          className="flex-1 min-w-0 cursor-pointer"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (isImage) {
+                              onPreviewImage({ src: fileUrl, fileName });
+                            } else {
+                              window.open(fileUrl, '_blank', 'noopener,noreferrer');
+                            }
+                          }}
+                        >
+                          <p className={`text-xs font-medium truncate max-w-[120px] ${isSent ? 'text-white' : 'text-gray-700'}`}>
+                            {fileName}
+                          </p>
+                          <p className={`text-xs ${isSent ? 'text-purple-200' : 'text-gray-400'}`}>
+                            {fileSize ? `${Math.round(fileSize / 1024)} KB` : ''}
+                          </p>
+                        </div>
+
+                        {/* Download button */}
+                        <a
+                          href={fileUrl}
+                          download={fileName}
+                          target={fileUrl.startsWith('data:') ? undefined : '_blank'}
+                          rel="noopener noreferrer"
+                          className={`p-1 rounded hover:bg-opacity-20 ${isSent ? 'hover:bg-white' : 'hover:bg-gray-200'}`}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <Download className={`w-3.5 h-3.5 ${isSent ? 'text-purple-200' : 'text-gray-400'}`} />
+                        </a>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             )}
 
@@ -328,19 +504,18 @@ const EmailDetails = () => {
   const [replyState, setReplyState] = useState(null);
   const [showCompose, setShowCompose] = useState(false);
   const [ComposeComponent, setComposeComponent] = useState(null);
+  const [previewImage, setPreviewImage] = useState(null); // { src, fileName } | null
 
   const email = emailData?.data;
   const allEmails = inboxData?.data?.emails || [];
   const customEmails = customEmailsData?.data?.emails || [];
 
-  // Dynamically import Compose component
   useEffect(() => {
     import('./Compose.jsx').then((module) => {
       setComposeComponent(() => module.default);
     });
   }, []);
 
-  // Set CSS variable for sidebar width
   useEffect(() => {
     const updateSidebarWidth = () => {
       const sidebar = document.querySelector('.lg\\:flex.lg\\:flex-col');
@@ -351,14 +526,11 @@ const EmailDetails = () => {
         document.documentElement.style.setProperty('--sidebar-width', '0px');
       }
     };
-    
     updateSidebarWidth();
     window.addEventListener('resize', updateSidebarWidth);
-    
     const observer = new MutationObserver(updateSidebarWidth);
     const sidebar = document.querySelector('.lg\\:flex.lg\\:flex-col');
     if (sidebar) observer.observe(sidebar, { attributes: true, attributeFilter: ['class', 'style'] });
-    
     return () => {
       window.removeEventListener('resize', updateSidebarWidth);
       observer.disconnect();
@@ -407,12 +579,10 @@ const EmailDetails = () => {
     await toggleStar(id).unwrap().catch(() => {});
     refetch();
   };
-  
   const handleArchive = async (id) => {
     await toggleArchive(id).unwrap().catch(() => {});
     navigate(-1);
   };
-  
   const handleDelete = async (id) => {
     if (window.confirm('Delete this email?')) {
       await deleteEmail(id).unwrap().catch(() => {});
@@ -464,8 +634,6 @@ const EmailDetails = () => {
     setReplyState(null);
   };
 
-  // ── Loading / Error ──────────────────────────────────────────────────────────
-
   if (isLoading)
     return (
       <div className="flex items-center justify-center h-screen bg-white">
@@ -492,21 +660,26 @@ const EmailDetails = () => {
 
   return (
     <>
+      <ImagePreviewModal
+        src={previewImage?.src}
+        fileName={previewImage?.fileName}
+        onClose={() => setPreviewImage(null)}
+      />
+
       <div className="bg-gray-50 min-h-screen">
-        {/* ── TOP BAR — fixed with sidebar spacing ── */}
-        <div 
+        {/* Top bar */}
+        <div
           className="fixed top-0 right-0 z-20 bg-white border-b border-gray-100"
-          style={{ 
+          style={{
             left: 'var(--sidebar-width, 0px)',
             right: 0,
-            paddingTop: 'env(safe-area-inset-top)'
+            paddingTop: 'env(safe-area-inset-top)',
           }}
         >
           <div className="flex items-center gap-2 px-3 py-2.5">
             <button onClick={() => navigate(-1)} className="p-1 -ml-1 flex-shrink-0">
               <ArrowLeft className="w-5 h-5 text-gray-700" />
             </button>
-
             <div
               className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-semibold flex-shrink-0 ${getAvatarColor(
                 email.from?.email
@@ -514,7 +687,6 @@ const EmailDetails = () => {
             >
               {getInitials(email.from?.email)}
             </div>
-
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold text-gray-900 truncate leading-tight">{email.from?.email}</p>
               <div className="flex items-center gap-1.5 flex-wrap">
@@ -528,7 +700,6 @@ const EmailDetails = () => {
                 )}
               </div>
             </div>
-
             <div className="flex items-center gap-0.5 flex-shrink-0">
               <button onClick={() => handleStar(email.emailId)} className="p-1.5 rounded-full hover:bg-gray-100">
                 <Star
@@ -547,7 +718,7 @@ const EmailDetails = () => {
           </div>
         </div>
 
-        {/* ── SCROLLABLE THREAD — NO margin, just padding for fixed bars ── */}
+        {/* Thread */}
         <div
           className="overflow-y-auto px-3 py-3"
           style={{
@@ -575,18 +746,19 @@ const EmailDetails = () => {
                 onDelete={handleDelete}
                 onArchive={handleArchive}
                 onReply={handleReply}
+                onPreviewImage={setPreviewImage}
               />
             );
           })}
         </div>
 
-        {/* ── BOTTOM BAR — fixed with sidebar spacing ── */}
-        <div 
+        {/* Bottom bar */}
+        <div
           className="fixed bottom-0 right-0 z-20 bg-white border-t border-gray-100"
-          style={{ 
+          style={{
             left: 'var(--sidebar-width, 0px)',
             right: 0,
-            paddingBottom: 'env(safe-area-inset-bottom)'
+            paddingBottom: 'env(safe-area-inset-bottom)',
           }}
         >
           <div className="flex items-center gap-2 px-3 py-2.5">
@@ -612,7 +784,6 @@ const EmailDetails = () => {
         </div>
       </div>
 
-      {/* Compose Modal for Reply/Forward */}
       {showCompose && replyState && ComposeComponent && (
         <div className="fixed inset-0 z-50">
           <ComposeComponent

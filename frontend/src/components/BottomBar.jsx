@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { useSelector, useDispatch } from 'react-redux';
 import { 
   Mail, 
   Inbox, 
@@ -16,14 +17,39 @@ import {
   BarChart3,
   Globe,
   ChevronRight,
-  AtSign
+  AtSign,
+  Shield,
+  Crown,
+  Code,
+  Activity
 } from 'lucide-react';
+import { useGetProfileQuery } from '../slices/userApiSlice';
 
 const BottomBar = () => {
   const navigate = useNavigate();
   const location = useLocation();
+  const { userInfo } = useSelector((state) => state.auth);
   const [showMenu, setShowMenu] = useState(false);
   const menuRef = useRef(null);
+
+  // Fetch user profile to get the role (just like SideBar)
+  const { data: profileData, isLoading: profileLoading } = useGetProfileQuery();
+  
+  // Get role from profile data or userInfo
+  const userRole = profileData?.data?.role || userInfo?.role || 'user';
+  const isAdmin = userRole === 'admin' || userRole === 'super_admin';
+  const isSuperAdmin = userRole === 'super_admin';
+
+  // Debug log to see what role we're getting
+  useEffect(() => {
+    console.log('📊 BottomBar User Role Debug:', {
+      profileRole: profileData?.data?.role,
+      userInfoRole: userInfo?.role,
+      finalRole: userRole,
+      isAdmin,
+      isSuperAdmin
+    });
+  }, [profileData, userInfo, userRole, isAdmin, isSuperAdmin]);
 
   const mainNavItems = [
     { id: 'inbox', label: 'Inbox', icon: Inbox, path: '/inbox' },
@@ -34,6 +60,7 @@ const BottomBar = () => {
   ];
 
   const moreNavItems = [
+    // Email Management Section
     { id: 'archive', label: 'Archive', icon: Archive, path: '/archive' },
     { id: 'trash', label: 'Trash', icon: Trash2, path: '/trash' },
     { id: 'custom-emails', label: 'Custom Emails', icon: AtSign, path: '/custom-emails' },
@@ -41,6 +68,17 @@ const BottomBar = () => {
     { id: 'team', label: 'Team Access', icon: Users, path: '/team' },
     { id: 'stats', label: 'Statistics', icon: BarChart3, path: '/stats' },
     { id: 'settings', label: 'Settings', icon: Settings, path: '/settings' },
+  ];
+
+  const adminNavItems = [
+    { id: 'admin-users', label: 'Users', icon: Users, path: '/admin/users' },
+    { id: 'admin-stats', label: 'Analytics', icon: Activity, path: '/admin/stats' },
+    { id: 'admin-apps', label: 'App Manager', icon: Code, path: '/admin/apps' },
+  ];
+
+  const superAdminNavItems = [
+    { id: 'admin-roles', label: 'Role Manager', icon: Crown, path: '/admin/roles' },
+    { id: 'admin-admins', label: 'Admins', icon: Shield, path: '/admin/admins' },
   ];
 
   const isActive = (path) => {
@@ -71,6 +109,10 @@ const BottomBar = () => {
     setShowMenu(false);
   };
 
+  if (profileLoading) {
+    return null; // Don't show bottom bar while loading role
+  }
+
   return (
     <>
       {/* Floating Hamburger Button */}
@@ -83,21 +125,35 @@ const BottomBar = () => {
 
       {/* Slide-out Menu */}
       <div
-        className={`fixed inset-y-0 left-0 z-40 w-64 bg-white shadow-2xl transform transition-transform duration-300 ease-in-out lg:hidden ${
+        ref={menuRef}
+        className={`fixed inset-y-0 left-0 z-40 w-72 bg-white shadow-2xl transform transition-transform duration-300 ease-in-out lg:hidden ${
           showMenu ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
         <div className="flex flex-col h-full">
           {/* Menu Header */}
-          <div className="p-4 border-b border-gray-200 bg-purple-600">
+          <div className="p-4 border-b border-gray-200 bg-gradient-to-r from-purple-600 to-purple-700">
             <div className="flex items-center space-x-2">
               <Mail className="w-6 h-6 text-white" />
               <span className="text-lg font-bold text-white">Nexa</span>
             </div>
+            {isAdmin && (
+              <div className="mt-2">
+                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
+                  isSuperAdmin 
+                    ? 'bg-amber-500 text-white' 
+                    : 'bg-purple-500 text-white'
+                }`}>
+                  {isSuperAdmin ? <Crown className="w-3 h-3" /> : <Shield className="w-3 h-3" />}
+                  {isSuperAdmin ? 'Super Admin' : 'Admin'}
+                </span>
+              </div>
+            )}
           </div>
 
           {/* Menu Items */}
           <div className="flex-1 overflow-y-auto py-4">
+            {/* Email Management Section */}
             <div className="px-2 space-y-1">
               <p className="px-3 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider">
                 Email Management
@@ -125,11 +181,96 @@ const BottomBar = () => {
                 );
               })}
             </div>
+
+            {/* Admin Section - Only visible for admin/super_admin */}
+            {isAdmin && (
+              <div className="px-2 mt-4 space-y-1">
+                <div className="relative">
+                  <div className="absolute inset-0 flex items-center">
+                    <div className="w-full border-t border-gray-200"></div>
+                  </div>
+                  <div className="relative flex justify-center">
+                    <span className="px-3 bg-white text-xs font-semibold text-gray-400 uppercase tracking-wider">
+                      Admin
+                    </span>
+                  </div>
+                </div>
+                <div className="mt-2 space-y-1">
+                  {adminNavItems.map((item) => {
+                    const Icon = item.icon;
+                    const active = isActive(item.path);
+                    
+                    return (
+                      <button
+                        key={item.id}
+                        onClick={() => handleNavigate(item.path)}
+                        className={`w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg transition ${
+                          active
+                            ? 'bg-purple-50 text-purple-600'
+                            : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+                        }`}
+                      >
+                        <Icon className={`w-5 h-5 ${active ? 'text-purple-600' : 'text-gray-400'}`} />
+                        <span className={`flex-1 text-left text-sm ${active ? 'font-medium' : ''}`}>
+                          {item.label}
+                        </span>
+                        <ChevronRight className={`w-4 h-4 ${active ? 'text-purple-600' : 'text-gray-300'}`} />
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Super Admin Section - Only visible for super_admin */}
+            {isSuperAdmin && (
+              <div className="px-2 mt-4 space-y-1">
+                <div className="relative">
+                  <div className="absolute inset-0 flex items-center">
+                    <div className="w-full border-t border-gray-200"></div>
+                  </div>
+                  <div className="relative flex justify-center">
+                    <span className="px-3 bg-white text-xs font-semibold text-gray-400 uppercase tracking-wider">
+                      Super Admin
+                    </span>
+                  </div>
+                </div>
+                <div className="mt-2 space-y-1">
+                  {superAdminNavItems.map((item) => {
+                    const Icon = item.icon;
+                    const active = isActive(item.path);
+                    
+                    return (
+                      <button
+                        key={item.id}
+                        onClick={() => handleNavigate(item.path)}
+                        className={`w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg transition ${
+                          active
+                            ? 'bg-purple-50 text-purple-600'
+                            : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+                        }`}
+                      >
+                        <Icon className={`w-5 h-5 ${active ? 'text-purple-600' : 'text-gray-400'}`} />
+                        <span className={`flex-1 text-left text-sm ${active ? 'font-medium' : ''}`}>
+                          {item.label}
+                        </span>
+                        <ChevronRight className={`w-4 h-4 ${active ? 'text-purple-600' : 'text-gray-300'}`} />
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Menu Footer */}
           <div className="p-4 border-t border-gray-200">
             <p className="text-xs text-gray-400 text-center">Nexa v1.0.0</p>
+            {isAdmin && (
+              <p className="text-xs text-gray-400 text-center mt-1">
+                {isSuperAdmin ? 'Super Admin Access' : 'Admin Access'}
+              </p>
+            )}
           </div>
         </div>
       </div>

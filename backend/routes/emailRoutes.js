@@ -67,7 +67,7 @@ cloudinary.config({
 const profilePictureStorage = new CloudinaryStorage({
   cloudinary: cloudinary,
   params: {
-    folder: "nexa_custom_email_profiles",
+    folder: "nexa_custom_email_profiles", 
     allowed_formats: ["jpg", "jpeg", "png", "webp", "avif", "gif"],
     transformation: [{ width: 200, height: 200, crop: "fill", gravity: "face" }],
   },

@@ -4,7 +4,7 @@ import './index.css'
 import App from './App.jsx'
 import store from "./store";
 
-import { createBrowserRouter, RouterProvider } from "react-router-dom";
+import { createBrowserRouter, RouterProvider, Navigate } from "react-router-dom";
 import { Provider, useDispatch, useSelector } from "react-redux";
 
 import Homepage from "./screens/Homepage.jsx";
@@ -53,7 +53,7 @@ const PushNotificationInitializer = () => {
       if (!mobilePush.isSubscribed && mobilePush.permission !== 'denied') {
         setTimeout(() => {
           mobilePush.subscribe();
-        }, 2000); // Delay to ensure user is logged in
+        }, 2000);
       }
     }
   }, [userInfo, mobilePush.isSubscribed]);
@@ -61,12 +61,36 @@ const PushNotificationInitializer = () => {
   return null;
 };
 
+// Component to handle redirect based on auth status and platform
+const RootRedirect = () => {
+  const { userInfo } = useSelector((state) => state.auth);
+  const isMobileApp = window.Capacitor?.isNativePlatform();
+  
+  // On mobile app
+  if (isMobileApp) {
+    // If logged in, go to inbox
+    if (userInfo) {
+      return <Navigate to="/inbox" replace />;
+    }
+    // If not logged in, go to login
+    return <Navigate to="/login" replace />;
+  }
+  
+  // On web browser
+  if (userInfo) {
+    return <Navigate to="/inbox" replace />;
+  }
+  
+  // On web without login, show homepage (marketing site)
+  return <Homepage />;
+};
+
 const router = createBrowserRouter([
   {
     path: "/",
     element: <App />,
     children: [
-      { index: true, element: <Homepage /> },
+      { index: true, element: <RootRedirect /> },
       { path: "login", element: <Login /> },
       { path: "register", element: <Register /> },
       { path: "verify-email", element: <VerifyEmail /> },
