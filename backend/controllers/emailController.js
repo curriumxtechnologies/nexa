@@ -327,7 +327,7 @@ const receiveEmail = async (req, res) => {
   try {
     const payload = req.body;
     const emailPayload = payload.data || payload;
-    const { to, from, subject, email_id, attachments: payloadAttachments } = emailPayload;
+    const { to, from, subject, email_id } = emailPayload;
 
     const toEmail = Array.isArray(to) ? to[0] : to;
 
@@ -396,7 +396,6 @@ const receiveEmail = async (req, res) => {
     // ========== FETCH FULL EMAIL CONTENT FROM RESEND ==========
     let emailHtml = '';
     let emailText = '';
-    let fullAttachments = payloadAttachments || [];
 
     if (email_id) {
       const resend = new Resend(resendConfig.apiKey);
@@ -405,10 +404,6 @@ const receiveEmail = async (req, res) => {
         if (!fetchError && emailData) {
           emailHtml = emailData.html || '';
           emailText = emailData.text || '';
-          // Use attachments from API if available (often more complete)
-          if (emailData.attachments && emailData.attachments.length > 0) {
-            fullAttachments = emailData.attachments;
-          }
           console.log(`✅ Successfully fetched email body for ${email_id}`);
         } else {
           console.error('Failed to fetch email content:', fetchError);
@@ -418,63 +413,77 @@ const receiveEmail = async (req, res) => {
       }
     }
 
-    // ========== PROCESS ATTACHMENTS (with base64 upload) ==========
-    const processedAttachments = [];
-
-    if (fullAttachments && fullAttachments.length > 0) {
-      for (const attachment of fullAttachments) {
-        const filename = attachment.filename || attachment.name || 'file';
-        const mimeType = attachment.mimetype || attachment.type || 'application/octet-stream';
-        const size = attachment.size || attachment.fileSize || 0;
-
-        let url = attachment.url || null;
-        let publicId = null;
-
-        // If no URL but we have base64 content, upload to Cloudinary
-        if (!url && attachment.content) {
-          try {
-            // Prepare base64 data (remove data:... prefix if present)
-            let base64Data = attachment.content;
-            if (base64Data.includes(';base64,')) {
-              base64Data = base64Data.split(';base64,')[1];
-            }
-
-            // Determine resource type
-            let resourceType = 'auto';
-            if (mimeType.startsWith('image/')) resourceType = 'image';
-            else if (mimeType.startsWith('video/')) resourceType = 'video';
-            else resourceType = 'raw'; // documents, archives, etc.
-
-            const uploadResult = await cloudinary.uploader.upload(
-              `data:${mimeType};base64,${base64Data}`,
-              {
-                folder: 'nexa_email_attachments',
-                resource_type: resourceType,
-                public_id: `${Date.now()}-${filename.replace(/\.[^.]+$/, '')}`,
-              }
-            );
-            url = uploadResult.secure_url;
-            publicId = uploadResult.public_id;
-            console.log(`✅ Uploaded attachment: ${filename} -> ${url}`);
-          } catch (uploadError) {
-            console.error(`Failed to upload attachment ${filename}:`, uploadError);
-            // Continue without this attachment? We'll keep it with null url.
-          }
+    // ========== PROCESS ATTACHMENTS ==========
+    // Use attachments from webhook payload (if any)
+    let attachments = emailPayload.attachments || [];
+    // If Resend API gave us more complete attachments, use those instead
+    if (email_id) {
+      const resend = new Resend(resendConfig.apiKey);
+      try {
+        const { data: emailData } = await resend.emails.receiving.get(email_id);
+        if (emailData && emailData.attachments && emailData.attachments.length > 0) {
+          attachments = emailData.attachments;
         }
-
-        processedAttachments.push({
-          filename: filename,
-          originalName: filename,
-          url: url,
-          publicId: publicId,
-          fileSize: size,
-          mimeType: mimeType,
-          cid: attachment.cid || null,
-        });
+      } catch (err) {
+        // Silent fail – we already have attachments from webhook
       }
     }
 
-    // ========== SAVE RECEIVED EMAIL ==========
+    const processedAttachments = [];
+
+    for (const attachment of attachments) {
+      const filename = attachment.filename || attachment.name || 'file';
+      const mimeType = attachment.mimetype || attachment.type || 'application/octet-stream';
+      const size = attachment.size || attachment.fileSize || 0;
+      const cid = attachment.cid || null;
+
+      let url = attachment.url || null;
+      let publicId = null;
+
+      // If we have base64 content and no URL, try uploading to Cloudinary
+      if (!url && attachment.content) {
+        try {
+          // Prepare base64 data
+          let base64Data = attachment.content;
+          if (base64Data.includes(';base64,')) {
+            base64Data = base64Data.split(';base64,')[1];
+          }
+
+          // Determine resource type
+          let resourceType = 'auto';
+          if (mimeType.startsWith('image/')) resourceType = 'image';
+          else if (mimeType.startsWith('video/')) resourceType = 'video';
+          else resourceType = 'raw';
+
+          const uploadResult = await cloudinary.uploader.upload(
+            `data:${mimeType};base64,${base64Data}`,
+            {
+              folder: 'nexa_email_attachments',
+              resource_type: resourceType,
+              public_id: `${Date.now()}-${filename.replace(/\.[^.]+$/, '')}`,
+            }
+          );
+          url = uploadResult.secure_url;
+          publicId = uploadResult.public_id;
+          console.log(`✅ Uploaded attachment: ${filename}`);
+        } catch (uploadError) {
+          console.error(`Failed to upload attachment ${filename}:`, uploadError);
+          // Keep url = null; the frontend will show a placeholder
+        }
+      }
+
+      processedAttachments.push({
+        filename,
+        originalName: filename,
+        url,
+        publicId,
+        fileSize: size,
+        mimeType,
+        cid,
+      });
+    }
+
+    // ========== SAVE EMAIL ==========
     const emailUuid = uuidv4();
     const receivedEmail = new Email({
       userId: user._id,
