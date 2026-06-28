@@ -7,7 +7,7 @@ import { Resend } from 'resend';
 import { v4 as uuidv4 } from 'uuid';
 import { Webhook } from 'svix';
 import { notifyNewEmail} from './notificationsController.js';
-import { v2 as cloudinary } from 'cloudinary';
+
 
 // ==================== HELPER FUNCTIONS ====================
 
@@ -319,19 +319,24 @@ const sendEmail = async (req, res) => {
  */
 // In your emailController.js
 
-// ─── Helper: fetch attachment bytes from Resend ─────────────────────────────
-const fetchAttachmentContent = async (resendApiKey, emailId, attachmentId) => {
-  const url = `https://api.resend.com/emails/${emailId}/attachments/${attachmentId}`;
-  const response = await fetch(url, {
-    headers: {
-      'Authorization': `Bearer ${resendApiKey}`,
-    },
-  });
-  if (!response.ok) {
-    throw new Error(`Resend API error: ${response.status} ${response.statusText}`);
-  }
-  const buffer = await response.arrayBuffer();
-  return Buffer.from(buffer).toString('base64');
+import { simpleParser } from 'mailparser';  // npm install mailparser
+import { v2 as cloudinary } from 'cloudinary';
+
+// ─── Helper: Upload a file buffer to Cloudinary ─────────────────────────────
+const uploadBufferToCloudinary = async (buffer, filename, mimeType) => {
+  const base64 = buffer.toString('base64');
+  const resourceType = mimeType.startsWith('image/') ? 'image'
+                     : mimeType.startsWith('video/') ? 'video'
+                     : 'raw';
+  const result = await cloudinary.uploader.upload(
+    `data:${mimeType};base64,${base64}`,
+    {
+      folder: 'nexa_email_attachments',
+      resource_type: resourceType,
+      public_id: `${Date.now()}-${filename.replace(/\.[^.]+$/, '')}`,
+    }
+  );
+  return result.secure_url;
 };
 
 // ─── receiveEmail ──────────────────────────────────────────────────────────────
@@ -371,7 +376,6 @@ const receiveEmail = async (req, res) => {
       });
     }
 
-    // Find the Resend config
     const resendConfig = user.resendConfigs.find(
       c =>
         (c.id === customEmail.resendConfigId ||
@@ -386,7 +390,7 @@ const receiveEmail = async (req, res) => {
       });
     }
 
-    // Verify webhook signature if configured
+    // Verify webhook signature
     if (resendConfig.webhookSecret) {
       const wh = new Webhook(resendConfig.webhookSecret);
       try {
@@ -396,99 +400,69 @@ const receiveEmail = async (req, res) => {
           'svix-signature': req.headers['svix-signature'],
         });
       } catch (err) {
-        console.error('Webhook signature verification failed for domain:', resendConfig.domain);
+        console.error('Webhook signature verification failed');
         return res.status(401).json({
           success: false,
           message: 'Invalid webhook signature',
         });
       }
-    } else {
-      console.warn(`No webhook secret configured for domain: ${resendConfig.domain}. Skipping signature verification.`);
     }
 
-    // ========== FETCH FULL EMAIL CONTENT ==========
+    // ─── Fetch the raw email from Resend ──────────────────────────────
     let emailHtml = '';
     let emailText = '';
+    let attachmentLinksHtml = '';
 
     if (email_id) {
       const resend = new Resend(resendConfig.apiKey);
       try {
-        const { data: emailData, error: fetchError } = await resend.emails.receiving.get(email_id);
-        if (!fetchError && emailData) {
-          emailHtml = emailData.html || '';
-          emailText = emailData.text || '';
-          console.log(`✅ Successfully fetched email body for ${email_id}`);
+        // 1. Get the raw email content (full MIME)
+        const { data: rawEmail, error: rawError } = await resend.emails.receiving.getRaw(email_id);
+        if (rawError) {
+          console.error('Failed to fetch raw email:', rawError);
+          // Fallback: try to get HTML only
+          const { data: emailData } = await resend.emails.receiving.get(email_id);
+          emailHtml = emailData?.html || '';
+          emailText = emailData?.text || '';
+        } else {
+          // Parse the raw MIME using mailparser
+          const parsed = await simpleParser(rawEmail);
+          emailHtml = parsed.html || '';
+          emailText = parsed.text || '';
 
-          // ---------- Process attachments ----------
-          const attachments = emailData.attachments || [];
-          if (attachments.length > 0) {
-            console.log(`📎 Found ${attachments.length} attachments. Embedding into content.`);
+          // Process attachments
+          if (parsed.attachments && parsed.attachments.length > 0) {
+            console.log(`📎 Found ${parsed.attachments.length} attachments in raw email.`);
+            attachmentLinksHtml = '<br/><br/><strong>Attachments:</strong><br/>';
 
-            let attachmentLinks = '<br/><br/><strong>Attachments:</strong><br/>';
+            for (const att of parsed.attachments) {
+              const filename = att.filename || 'file';
+              const mimeType = att.contentType || 'application/octet-stream';
+              const buffer = att.content; // Buffer
 
-            for (const att of attachments) {
-              const filename = att.filename || att.name || 'file';
-              const mimeType = att.mimetype || att.type || att.content_type || 'application/octet-stream';
-
-              let href = null;
-
-              // 1. Try direct URL fields
-              const urlFields = ['url', 'fileUrl', 'downloadUrl', 'location', 's3Url', 'path', 'href', 'link'];
-              for (const field of urlFields) {
-                if (att[field]) {
-                  href = att[field];
-                  break;
-                }
-              }
-
-              // 2. Try base64 content fields
-              if (!href) {
-                const base64Fields = ['content', 'data', 'base64', 'fileContent'];
-                for (const field of base64Fields) {
-                  const value = att[field];
-                  if (value) {
-                    if (typeof value === 'string' && value.startsWith('data:')) {
-                      href = value;
-                    } else {
-                      href = `data:${mimeType};base64,${value}`;
-                    }
-                    break;
-                  }
-                }
-              }
-
-              // 3. If still no href, try to fetch the attachment from Resend
-              if (!href && att.id && email_id) {
-                try {
-                  console.log(`⬇️ Fetching attachment "${filename}" from Resend...`);
-                  const base64 = await fetchAttachmentContent(resendConfig.apiKey, email_id, att.id);
-                  href = `data:${mimeType};base64,${base64}`;
-                  console.log(`✅ Successfully fetched attachment "${filename}"`);
-                } catch (err) {
-                  console.error(`❌ Failed to fetch attachment "${filename}":`, err.message);
-                }
-              }
-
-              if (href) {
-                attachmentLinks += `<a href="${href}" download="${filename}">${filename}</a><br/>`;
-              } else {
-                attachmentLinks += `${filename} (unavailable)<br/>`;
-                console.warn(`Attachment "${filename}" has no URL, content, or fetch failed.`);
+              try {
+                // Upload to Cloudinary
+                const url = await uploadBufferToCloudinary(buffer, filename, mimeType);
+                attachmentLinksHtml += `<a href="${url}" download="${filename}">${filename}</a><br/>`;
+                console.log(`✅ Uploaded attachment "${filename}" to Cloudinary`);
+              } catch (uploadError) {
+                console.error(`Failed to upload "${filename}":`, uploadError);
+                attachmentLinksHtml += `${filename} (upload failed)<br/>`;
               }
             }
-
-            // Append the attachment links to the HTML content
-            emailHtml += attachmentLinks;
           }
-        } else {
-          console.error('Failed to fetch email content:', fetchError);
         }
       } catch (fetchError) {
         console.error('Error fetching email from Resend:', fetchError);
       }
     }
 
-    // ========== SAVE EMAIL ==========
+    // Append attachment links to the HTML content
+    if (attachmentLinksHtml) {
+      emailHtml += attachmentLinksHtml;
+    }
+
+    // ─── Save email ────────────────────────────────────────────────────
     const emailUuid = uuidv4();
     const receivedEmail = new Email({
       userId: user._id,
@@ -503,7 +477,7 @@ const receiveEmail = async (req, res) => {
       subject: subject || '(No Subject)',
       content: emailHtml || emailText || '',
       contentType: emailHtml ? 'html' : 'text',
-      attachments: [], // We embed attachments in the content, so the array stays empty to avoid validation errors
+      attachments: [], // We embed attachments as links in content
       status: 'received',
       receivedAt: new Date(),
       webhookData: req.body,
@@ -512,7 +486,7 @@ const receiveEmail = async (req, res) => {
 
     await receivedEmail.save();
 
-    // ========== SEND NOTIFICATIONS ==========
+    // ─── Notifications & Forwarding (unchanged) ──────────────────────
     const preview = (emailHtml || emailText || '')
       .replace(/<[^>]*>/g, '')
       .substring(0, 100);
@@ -524,7 +498,6 @@ const receiveEmail = async (req, res) => {
       id: emailUuid,
     });
 
-    // Forward to user's forward email if set
     if (customEmail.forwardToEmail && resendConfig.isVerified) {
       const resend = new Resend(resendConfig.apiKey);
       try {
