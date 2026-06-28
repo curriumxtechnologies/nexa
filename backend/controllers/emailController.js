@@ -319,10 +319,22 @@ const sendEmail = async (req, res) => {
  */
 // In your emailController.js
 
-/**
- * Receive email (webhook from Resend)
- * POST /api/email/webhook/receive
- */
+// ─── Helper: fetch attachment bytes from Resend ─────────────────────────────
+const fetchAttachmentContent = async (resendApiKey, emailId, attachmentId) => {
+  const url = `https://api.resend.com/emails/${emailId}/attachments/${attachmentId}`;
+  const response = await fetch(url, {
+    headers: {
+      'Authorization': `Bearer ${resendApiKey}`,
+    },
+  });
+  if (!response.ok) {
+    throw new Error(`Resend API error: ${response.status} ${response.statusText}`);
+  }
+  const buffer = await response.arrayBuffer();
+  return Buffer.from(buffer).toString('base64');
+};
+
+// ─── receiveEmail ──────────────────────────────────────────────────────────────
 const receiveEmail = async (req, res) => {
   try {
     const payload = req.body;
@@ -334,20 +346,20 @@ const receiveEmail = async (req, res) => {
     if (!toEmail) {
       return res.status(400).json({
         success: false,
-        message: 'No recipient email found in webhook payload'
+        message: 'No recipient email found in webhook payload',
       });
     }
 
     // Find custom email
     const customEmail = await CustomEmail.findOne({
       email: toEmail.toLowerCase(),
-      isActive: true
+      isActive: true,
     });
 
     if (!customEmail) {
       return res.status(404).json({
         success: false,
-        message: 'No custom email found for this address'
+        message: 'No custom email found for this address',
       });
     }
 
@@ -355,21 +367,22 @@ const receiveEmail = async (req, res) => {
     if (!user) {
       return res.status(404).json({
         success: false,
-        message: 'User not found'
+        message: 'User not found',
       });
     }
 
-    // Find Resend config
+    // Find the Resend config
     const resendConfig = user.resendConfigs.find(
-      c => (c.id === customEmail.resendConfigId ||
-        c._id?.toString() === customEmail.resendConfigId?.toString())
-        && c.isActive
+      c =>
+        (c.id === customEmail.resendConfigId ||
+          c._id?.toString() === customEmail.resendConfigId?.toString()) &&
+        c.isActive
     );
 
     if (!resendConfig) {
       return res.status(404).json({
         success: false,
-        message: 'Resend configuration not found for this email'
+        message: 'Resend configuration not found for this email',
       });
     }
 
@@ -386,7 +399,7 @@ const receiveEmail = async (req, res) => {
         console.error('Webhook signature verification failed for domain:', resendConfig.domain);
         return res.status(401).json({
           success: false,
-          message: 'Invalid webhook signature'
+          message: 'Invalid webhook signature',
         });
       }
     } else {
@@ -414,12 +427,8 @@ const receiveEmail = async (req, res) => {
             let attachmentLinks = '<br/><br/><strong>Attachments:</strong><br/>';
 
             for (const att of attachments) {
-              // Log the full attachment object to see all fields
-              console.log('📎 Full attachment object:', JSON.stringify(att, null, 2));
-
-              // ---- Robust URL/content extraction (same as frontend) ----
               const filename = att.filename || att.name || 'file';
-              const mimeType = att.mimetype || att.type || att.contentType || 'application/octet-stream';
+              const mimeType = att.mimetype || att.type || att.content_type || 'application/octet-stream';
 
               let href = null;
 
@@ -432,7 +441,7 @@ const receiveEmail = async (req, res) => {
                 }
               }
 
-              // 2. If no URL, try base64 content fields
+              // 2. Try base64 content fields
               if (!href) {
                 const base64Fields = ['content', 'data', 'base64', 'fileContent'];
                 for (const field of base64Fields) {
@@ -441,7 +450,6 @@ const receiveEmail = async (req, res) => {
                     if (typeof value === 'string' && value.startsWith('data:')) {
                       href = value;
                     } else {
-                      // Build data URI
                       href = `data:${mimeType};base64,${value}`;
                     }
                     break;
@@ -449,16 +457,27 @@ const receiveEmail = async (req, res) => {
                 }
               }
 
+              // 3. If still no href, try to fetch the attachment from Resend
+              if (!href && att.id && email_id) {
+                try {
+                  console.log(`⬇️ Fetching attachment "${filename}" from Resend...`);
+                  const base64 = await fetchAttachmentContent(resendConfig.apiKey, email_id, att.id);
+                  href = `data:${mimeType};base64,${base64}`;
+                  console.log(`✅ Successfully fetched attachment "${filename}"`);
+                } catch (err) {
+                  console.error(`❌ Failed to fetch attachment "${filename}":`, err.message);
+                }
+              }
+
               if (href) {
-                // If it's a data URI, we keep it as-is; otherwise it's a URL
                 attachmentLinks += `<a href="${href}" download="${filename}">${filename}</a><br/>`;
               } else {
                 attachmentLinks += `${filename} (unavailable)<br/>`;
-                console.warn(`Attachment "${filename}" has no URL or content.`);
+                console.warn(`Attachment "${filename}" has no URL, content, or fetch failed.`);
               }
             }
 
-            // Append to the HTML content
+            // Append the attachment links to the HTML content
             emailHtml += attachmentLinks;
           }
         } else {
@@ -469,7 +488,7 @@ const receiveEmail = async (req, res) => {
       }
     }
 
-    // ========== SAVE EMAIL (with attachments embedded) ==========
+    // ========== SAVE EMAIL ==========
     const emailUuid = uuidv4();
     const receivedEmail = new Email({
       userId: user._id,
@@ -478,22 +497,22 @@ const receiveEmail = async (req, res) => {
       emailId: emailUuid,
       from: {
         email: typeof from === 'object' ? from.email : from,
-        name: typeof from === 'object' ? from.name : null
+        name: typeof from === 'object' ? from.name : null,
       },
       to: [{ email: toEmail, name: null }],
       subject: subject || '(No Subject)',
       content: emailHtml || emailText || '',
       contentType: emailHtml ? 'html' : 'text',
-      attachments: [], // empty array to avoid validation errors
+      attachments: [], // We embed attachments in the content, so the array stays empty to avoid validation errors
       status: 'received',
       receivedAt: new Date(),
       webhookData: req.body,
-      resendEmailId: email_id
+      resendEmailId: email_id,
     });
 
     await receivedEmail.save();
 
-    // ========== NOTIFICATIONS & FORWARDING (unchanged) ==========
+    // ========== SEND NOTIFICATIONS ==========
     const preview = (emailHtml || emailText || '')
       .replace(/<[^>]*>/g, '')
       .substring(0, 100);
@@ -502,9 +521,10 @@ const receiveEmail = async (req, res) => {
       from: typeof from === 'object' ? from.email : from,
       subject: subject || '(No Subject)',
       preview,
-      id: emailUuid
+      id: emailUuid,
     });
 
+    // Forward to user's forward email if set
     if (customEmail.forwardToEmail && resendConfig.isVerified) {
       const resend = new Resend(resendConfig.apiKey);
       try {
@@ -520,7 +540,7 @@ const receiveEmail = async (req, res) => {
               <hr />
               ${emailHtml || `<p>${emailText}</p>` || ''}
             </div>
-          `
+          `,
         });
       } catch (forwardError) {
         console.error('Email forwarding failed:', forwardError.message);
@@ -529,15 +549,14 @@ const receiveEmail = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      message: 'Email received and stored'
+      message: 'Email received and stored',
     });
-
   } catch (error) {
     console.error('Receive email error:', error);
     res.status(500).json({
       success: false,
       message: 'Error processing received email',
-      error: error.message
+      error: error.message,
     });
   }
 };
