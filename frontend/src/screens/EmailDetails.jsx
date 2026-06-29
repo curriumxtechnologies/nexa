@@ -25,6 +25,8 @@ import {
   ZoomIn,
 } from 'lucide-react';
 import { format } from 'date-fns';
+import ReplyModal from '../components/ReplyModal';
+import ForwardModal from '../components/ForwardModal';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -329,21 +331,14 @@ const EmailDetails = () => {
   const [toggleStar] = useToggleStarMutation();
   const [toggleArchive] = useToggleArchiveMutation();
 
-  const [replyState, setReplyState] = useState(null);
-  const [showCompose, setShowCompose] = useState(false);
-  const [ComposeComponent, setComposeComponent] = useState(null);
+  const [replyState, setReplyState] = useState(null); // { mode, email }
   const [previewImage, setPreviewImage] = useState(null); // { src, fileName } | null
 
   const email = emailData?.data;
   const allEmails = inboxData?.data?.emails || [];
   const customEmails = customEmailsData?.data?.emails || [];
 
-  useEffect(() => {
-    import('./Compose.jsx').then((module) => {
-      setComposeComponent(() => module.default);
-    });
-  }, []);
-
+  // ── Sidebar width hack ──
   useEffect(() => {
     const updateSidebarWidth = () => {
       const sidebar = document.querySelector('.lg\\:flex.lg\\:flex-col');
@@ -365,6 +360,7 @@ const EmailDetails = () => {
     };
   }, []);
 
+  // ── Memos ──
   const receivingAccount = useMemo(() => {
     if (!email) return null;
     const toAddr = extractAddress(email.to);
@@ -398,11 +394,13 @@ const EmailDetails = () => {
     return result;
   }, [threadEmails]);
 
+  // ── Mark as read ──
   useEffect(() => {
     if (email && !email.isRead && email.direction === 'received')
       markAsRead(email.emailId).unwrap().catch(() => {});
   }, [email]);
 
+  // ── Handlers ──
   const handleStar = async (id) => {
     await toggleStar(id).unwrap().catch(() => {});
     refetch();
@@ -419,49 +417,14 @@ const EmailDetails = () => {
   };
 
   const handleReply = (emailItem, mode) => {
-    const subject = emailItem.subject;
-    let replySubject = '';
-    let replyTo = '';
-    let replyCc = '';
-    let replyContent = '';
-
-    if (mode === 'reply') {
-      replySubject = subject?.startsWith('Re:') ? subject : `Re: ${subject}`;
-      replyTo = emailItem.from?.email;
-      replyContent = formatQuotedContent(emailItem, 'reply');
-    } else if (mode === 'replyAll') {
-      replySubject = subject?.startsWith('Re:') ? subject : `Re: ${subject}`;
-      replyTo = emailItem.from?.email;
-      const allRecipients = (emailItem.to || [])
-        .map((t) => t.email || extractAddress(t))
-        .filter((addr) => addr !== emailItem.from?.email);
-      if (emailItem.cc) {
-        allRecipients.push(...emailItem.cc.map((c) => c.email || extractAddress(c)));
-      }
-      replyCc = allRecipients.join(', ');
-      replyContent = formatQuotedContent(emailItem, 'reply');
-    } else if (mode === 'forward') {
-      replySubject = subject?.startsWith('Fwd:') ? subject : `Fwd: ${subject}`;
-      replyTo = '';
-      replyContent = formatQuotedContent(emailItem, 'forward');
-    }
-
-    setReplyState({
-      mode,
-      email: emailItem,
-      to: replyTo,
-      cc: replyCc,
-      subject: replySubject,
-      content: replyContent,
-    });
-    setShowCompose(true);
+    setReplyState({ mode, email: emailItem });
   };
 
   const handleCloseCompose = () => {
-    setShowCompose(false);
     setReplyState(null);
   };
 
+  // ── Loading / Error ──
   if (isLoading)
     return (
       <div className="flex items-center justify-center h-screen bg-white">
@@ -495,7 +458,7 @@ const EmailDetails = () => {
       />
 
       <div className="bg-gray-50 min-h-screen">
-        {/* Top bar */}
+        {/* ── Top bar ── */}
         <div
           className="fixed top-0 right-0 z-20 bg-white border-b border-gray-100"
           style={{
@@ -546,7 +509,7 @@ const EmailDetails = () => {
           </div>
         </div>
 
-        {/* Thread */}
+        {/* ── Thread ── */}
         <div
           className="overflow-y-auto px-3 py-3"
           style={{
@@ -580,7 +543,7 @@ const EmailDetails = () => {
           })}
         </div>
 
-        {/* Bottom bar */}
+        {/* ── Bottom bar ── */}
         <div
           className="fixed bottom-0 right-0 z-20 bg-white border-t border-gray-100"
           style={{
@@ -612,17 +575,21 @@ const EmailDetails = () => {
         </div>
       </div>
 
-      {showCompose && replyState && ComposeComponent && (
-        <div className="fixed inset-0 z-50">
-          <ComposeComponent
-            initialTo={replyState.to}
-            initialCc={replyState.cc}
-            initialSubject={replyState.subject}
-            initialContent={replyState.content}
-            isReply={true}
+      {/* ── Modals ── */}
+      {replyState && (
+        replyState.mode === 'reply' || replyState.mode === 'replyAll' ? (
+          <ReplyModal
+            email={replyState.email}
             onClose={handleCloseCompose}
+            onSendSuccess={() => refetch()}
           />
-        </div>
+        ) : replyState.mode === 'forward' ? (
+          <ForwardModal
+            email={replyState.email}
+            onClose={handleCloseCompose}
+            onSendSuccess={() => refetch()}
+          />
+        ) : null
       )}
     </>
   );

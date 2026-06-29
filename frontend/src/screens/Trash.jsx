@@ -1,12 +1,12 @@
 import React, { useState, useMemo, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { 
   useGetInboxQuery, 
   useMarkAsReadMutation, 
   useToggleStarMutation, 
   useDeleteEmailMutation,
   usePermanentlyDeleteEmailMutation,
-  useRestoreEmailMutation
+  useRestoreEmailMutation,
+  useGetEmailByIdQuery,
 } from '../slices/emailApiSlice';
 import { 
   Trash2, 
@@ -20,10 +20,145 @@ import {
   AlertCircle,
   ArchiveRestore,
   XCircle,
-  X
+  X,
+  ArrowLeft,
+  Reply,
+  Forward,
+  Download,
 } from 'lucide-react';
 import { format } from 'date-fns';
+import { useNavigate } from 'react-router-dom';
 
+// ─── Email Detail Modal ──────────────────────────────────────────────────────
+const EmailDetailModal = ({ emailId, onClose, onAction }) => {
+  const { data: emailData, isLoading, error } = useGetEmailByIdQuery(emailId);
+  const [restoreEmail] = useRestoreEmailMutation();
+  const [permanentlyDeleteEmail] = usePermanentlyDeleteEmailMutation();
+  const [actionLoading, setActionLoading] = useState(false);
+
+  const email = emailData?.data;
+
+  const handleRestore = async () => {
+    if (!email) return;
+    setActionLoading(true);
+    try {
+      await restoreEmail(email.emailId).unwrap();
+      onAction?.('restored');
+      onClose();
+    } catch (err) {
+      console.error('Restore failed:', err);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handlePermanentDelete = async () => {
+    if (!email) return;
+    if (!window.confirm('Delete this email permanently? This cannot be undone.')) return;
+    setActionLoading(true);
+    try {
+      await permanentlyDeleteEmail(email.emailId).unwrap();
+      onAction?.('deleted');
+      onClose();
+    } catch (err) {
+      console.error('Permanent delete failed:', err);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const formatDate = (d) => (d ? format(new Date(d), "MMM d, yyyy 'at' h:mm a") : 'N/A');
+
+  if (isLoading) {
+    return (
+      <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+        <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex items-center justify-center">
+          <Loader2 className="w-8 h-8 text-purple-600 animate-spin" />
+        </div>
+      </div>
+    );
+  }
+
+  if (error || !email) {
+    return (
+      <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+        <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl p-6 text-center">
+          <AlertCircle className="w-10 h-10 text-red-400 mx-auto mb-3" />
+          <p className="text-gray-700">Failed to load email</p>
+          <button onClick={onClose} className="mt-4 px-4 py-2 bg-purple-600 text-white rounded-lg">Close</button>
+        </div>
+      </div>
+    );
+  }
+
+  const fromDisplay = email.from?.name || email.from?.email || 'Unknown';
+  const toDisplay = email.to?.map(t => t.email || t).join(', ') || 'No recipients';
+  const subject = email.subject || '(No Subject)';
+  const content = email.content || '';
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col">
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-3 bg-purple-600 text-white rounded-t-xl">
+          <h2 className="text-base font-semibold truncate">{subject}</h2>
+          <button onClick={onClose} className="hover:bg-purple-700 rounded p-1">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto p-5 space-y-4">
+          {/* Metadata */}
+          <div className="space-y-1 text-sm text-gray-600">
+            <p><span className="font-medium">From:</span> {fromDisplay}</p>
+            <p><span className="font-medium">To:</span> {toDisplay}</p>
+            {email.cc?.length > 0 && (
+              <p><span className="font-medium">Cc:</span> {email.cc.map(c => c.email || c).join(', ')}</p>
+            )}
+            <p><span className="font-medium">Date:</span> {formatDate(email.receivedAt || email.sentAt || email.createdAt)}</p>
+          </div>
+
+          {/* Content */}
+          <div className="border-t border-gray-200 pt-4">
+            <div 
+              className="prose prose-sm max-w-none text-gray-800"
+              dangerouslySetInnerHTML={{ __html: content }}
+            />
+          </div>
+        </div>
+
+        {/* Footer with actions */}
+        <div className="flex items-center justify-between px-5 py-3 bg-gray-50 border-t border-gray-200 rounded-b-xl">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleRestore}
+              disabled={actionLoading}
+              className="flex items-center gap-1 px-3 py-1.5 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition disabled:opacity-50 text-sm"
+            >
+              <ArchiveRestore className="w-4 h-4" /> Restore
+            </button>
+            <button
+              onClick={handlePermanentDelete}
+              disabled={actionLoading}
+              className="flex items-center gap-1 px-3 py-1.5 bg-red-500 text-white rounded-lg hover:bg-red-600 transition disabled:opacity-50 text-sm"
+            >
+              <XCircle className="w-4 h-4" /> Delete Forever
+            </button>
+          </div>
+          <button
+            onClick={onClose}
+            className="text-sm text-gray-400 hover:text-gray-600 transition"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ─── Main Trash Component ──────────────────────────────────────────────────
 const Trash = () => {
   const navigate = useNavigate();
   const [page, setPage] = useState(1);
@@ -31,6 +166,7 @@ const Trash = () => {
   const [selectedEmails, setSelectedEmails] = useState([]);
   const [showFilterMenu, setShowFilterMenu] = useState(false);
   const [filterType, setFilterType] = useState('all');
+  const [selectedEmailId, setSelectedEmailId] = useState(null); // for modal
   const limit = 20;
 
   const { data, isLoading, error, refetch } = useGetInboxQuery({ page, limit, folder: 'trash' });
@@ -144,12 +280,13 @@ const Trash = () => {
 
   const handleSearchChange = (e) => setSearchTerm(e.target.value);
 
+  // ── Click opens modal instead of navigating ──
   const handleThreadClick = (group) => {
-    navigate(`/email/${group.latest.emailId}`);
+    setSelectedEmailId(group.latest.emailId);
   };
 
   const handleEmailClick = (email) => {
-    navigate(`/email/${email.emailId}`);
+    setSelectedEmailId(email.emailId);
   };
 
   const handleStarToggle = async (e, emailId) => {
@@ -204,6 +341,9 @@ const Trash = () => {
       default: return 'All';
     }
   };
+
+  const handleModalClose = () => setSelectedEmailId(null);
+  const handleModalAction = () => refetch(); // refresh list after action
 
   if (isLoading && page === 1) {
     return (
@@ -661,6 +801,15 @@ const Trash = () => {
           </div>
         )}
       </div>
+
+      {/* ─── EMAIL DETAIL MODAL ────────────────────────────────────────────── */}
+      {selectedEmailId && (
+        <EmailDetailModal
+          emailId={selectedEmailId}
+          onClose={handleModalClose}
+          onAction={handleModalAction}
+        />
+      )}
     </>
   );
 };
