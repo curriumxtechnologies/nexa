@@ -340,6 +340,64 @@ const uploadBufferToCloudinary = async (buffer, filename, mimeType) => {
   return result.secure_url;
 };
 
+// ─── Helper: SVG icon based on file extension ──────────────────────────────
+const getFileIconSvg = (filename) => {
+  const ext = filename.split('.').pop().toLowerCase();
+  const color = '#7c3aed'; // brand purple
+
+  // Common file types
+  if (['pdf'].includes(ext)) {
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+      <polyline points="14 2 14 8 20 8"/>
+      <line x1="16" y1="13" x2="8" y2="13"/>
+      <line x1="16" y1="17" x2="8" y2="17"/>
+      <polyline points="10 9 9 9 8 9"/>
+    </svg>`;
+  }
+  if (['doc', 'docx'].includes(ext)) {
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+      <polyline points="14 2 14 8 20 8"/>
+      <line x1="16" y1="13" x2="8" y2="13"/>
+      <line x1="16" y1="17" x2="8" y2="17"/>
+      <polyline points="10 9 9 9 8 9"/>
+    </svg>`;
+  }
+  if (['xls', 'xlsx'].includes(ext)) {
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="2" y="2" width="20" height="20" rx="2.18"/>
+      <line x1="8" y1="2" x2="8" y2="22"/>
+      <line x1="16" y1="2" x2="16" y2="22"/>
+      <line x1="2" y1="8" x2="22" y2="8"/>
+      <line x1="2" y1="16" x2="22" y2="16"/>
+    </svg>`;
+  }
+  if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext)) {
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="2" y="2" width="20" height="20" rx="2.18"/>
+      <circle cx="8.5" cy="8.5" r="1.5"/>
+      <polyline points="21 15 16 10 5 21"/>
+    </svg>`;
+  }
+  if (['zip', 'rar', '7z'].includes(ext)) {
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="21 8 21 21 3 21 3 8"/>
+      <rect x="1" y="3" width="22" height="5"/>
+      <line x1="10" y1="12" x2="14" y2="12"/>
+      <line x1="12" y1="10" x2="12" y2="14"/>
+    </svg>`;
+  }
+  // Default file icon
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+    <polyline points="14 2 14 8 20 8"/>
+    <line x1="16" y1="13" x2="8" y2="13"/>
+    <line x1="16" y1="17" x2="8" y2="17"/>
+    <polyline points="10 9 9 9 8 9"/>
+  </svg>`;
+};
+
 // ─── receiveEmail ──────────────────────────────────────────────────────────────
 const receiveEmail = async (req, res) => {
   try {
@@ -424,38 +482,32 @@ const receiveEmail = async (req, res) => {
 
                 try {
                   const url = await uploadBufferToCloudinary(buffer, filename, mimeType);
-                  // Choose an icon based on file extension
-                  const ext = filename.split('.').pop().toLowerCase();
-                  let icon = '📄';
-                  if (['pdf'].includes(ext)) icon = '📕';
-                  else if (['doc', 'docx'].includes(ext)) icon = '📘';
-                  else if (['xls', 'xlsx'].includes(ext)) icon = '📊';
-                  else if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext)) icon = '🖼️';
-                  else if (['zip', 'rar', '7z'].includes(ext)) icon = '📦';
-                  else if (['mp4', 'mov', 'avi'].includes(ext)) icon = '🎬';
+                  const iconSvg = getFileIconSvg(filename);
 
                   cards.push(`
-                    <div style="display: flex; align-items: center; gap: 8px; margin: 6px 0; padding: 8px 12px; background: #f3f4f6; border-radius: 8px; border: 1px solid #e5e7eb;">
-                      <span style="font-size: 20px;">${icon}</span>
-                      <a href="${url}" download="${filename}" style="flex: 1; color: #7c3aed; text-decoration: none; font-weight: 500; word-break: break-all;">
+                    <div style="display: flex; align-items: center; gap: 10px; margin: 6px 0; padding: 8px 12px; background: #f8fafc; border-radius: 8px; border: 1px solid #e2e8f0; transition: background 0.2s; max-width: 100%; flex-wrap: wrap;">
+                      <div style="flex-shrink: 0; width: 24px; height: 24px;">${iconSvg}</div>
+                      <a href="${url}" download="${filename}" style="flex: 1 1 120px; color: #7c3aed; text-decoration: none; font-weight: 500; font-size: 14px; word-break: break-word; min-width: 60px;">
                         ${filename}
                       </a>
-                      <span style="color: #6b7280; font-size: 12px; white-space: nowrap;">${fileSizeKB} KB</span>
-                      <a href="${url}" download="${filename}" style="font-size: 16px; color: #4b5563; text-decoration: none;">⬇️</a>
+                      <span style="color: #64748b; font-size: 12px; white-space: nowrap; flex-shrink: 0;">${fileSizeKB} KB</span>
+                      <a href="${url}" download="${filename}" style="flex-shrink: 0; color: #64748b; text-decoration: none; font-size: 16px; padding: 0 4px; hover:color: #7c3aed;">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                      </a>
                     </div>
                   `);
                   console.log(`✅ Uploaded "${filename}" to Cloudinary`);
                 } catch (uploadError) {
                   console.error(`Failed to upload "${filename}":`, uploadError);
                   cards.push(`
-                    <div style="display: flex; align-items: center; gap: 8px; margin: 6px 0; padding: 8px 12px; background: #fef2f2; border-radius: 8px; border: 1px solid #fecaca;">
-                      <span style="font-size: 20px;">❌</span>
-                      <span style="color: #dc2626;">${filename} (upload failed)</span>
+                    <div style="display: flex; align-items: center; gap: 10px; margin: 6px 0; padding: 8px 12px; background: #fef2f2; border-radius: 8px; border: 1px solid #fecaca; max-width: 100%; flex-wrap: wrap;">
+                      <span style="color: #dc2626; font-size: 14px;">❌</span>
+                      <span style="color: #dc2626; font-size: 14px;">${filename} (upload failed)</span>
                     </div>
                   `);
                 }
               }
-              attachmentHtml = `<br/><br/><strong>Attachments</strong><br/>${cards.join('')}`;
+              attachmentHtml = `<br/><br/><strong style="font-size: 16px; color: #1e293b;">Attachments</strong><br/>${cards.join('')}`;
             }
           } else {
             console.warn('No raw.download_url found in email metadata.');
@@ -486,7 +538,7 @@ const receiveEmail = async (req, res) => {
       subject: subject || '(No Subject)',
       content: emailHtml || emailText || '',
       contentType: emailHtml ? 'html' : 'text',
-      attachments: [], // empty to avoid validation
+      attachments: [],
       status: 'received',
       receivedAt: new Date(),
       webhookData: req.body,
