@@ -35,7 +35,12 @@ const Inbox = () => {
   const [showAccountPicker, setShowAccountPicker] = useState(false);
   const limit = 20;
 
-  const { data, isLoading, error, refetch } = useGetInboxQuery({ page, limit, folder });
+  // ── Auto‑refresh every 15 seconds ──
+  const { data, isLoading, error, refetch } = useGetInboxQuery(
+    { page, limit, folder },
+    { pollingInterval: 15000 }
+  );
+
   const { data: customEmailsData } = useGetCustomEmailsQuery();
   const [markAsRead] = useMarkAsReadMutation();
   const [toggleStar] = useToggleStarMutation();

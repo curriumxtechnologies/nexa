@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useSelector, useDispatch } from 'react-redux';
 import { 
@@ -26,24 +26,36 @@ import {
 } from 'lucide-react';
 import { logout } from '../slices/authSlice';
 import { useGetProfileQuery } from '../slices/userApiSlice';
+import { useGetInboxQuery } from '../slices/emailApiSlice';
 
 const SideBar = ({ isCollapsed = false, onToggle }) => {
   const navigate = useNavigate();
   const location = useLocation();
   const dispatch = useDispatch();
-  const { userInfo } = useSelector((state) => state.auth); // ← ADD THIS LINE
+  const { userInfo } = useSelector((state) => state.auth);
   const [collapsed, setCollapsed] = useState(isCollapsed);
   const [hoveredMenu, setHoveredMenu] = useState(null);
 
-  // Fetch user profile to get the role
+  // Fetch user profile
   const { data: profileData, isLoading: profileLoading } = useGetProfileQuery();
-  
-  // Get role from profile data or userInfo
+
+  // ── Fetch inbox with polling for unread count ──
+  const { data: inboxData } = useGetInboxQuery(
+    { page: 1, limit: 50, folder: 'inbox' },
+    { pollingInterval: 15000 } // refresh every 15 seconds
+  );
+
+  // ── Compute unread count ──
+  const unreadCount = useMemo(() => {
+    const emails = inboxData?.data?.emails || [];
+    return emails.filter((email) => !email.isRead).length;
+  }, [inboxData]);
+
   const userRole = profileData?.data?.role || userInfo?.role || 'user';
   const isAdmin = userRole === 'admin' || userRole === 'super_admin';
   const isSuperAdmin = userRole === 'super_admin';
 
-  // Debug log to see what role we're getting
+  // ── Debug log ──
   useEffect(() => {
     console.log('📊 User Role Debug:', {
       profileRole: profileData?.data?.role,
@@ -70,8 +82,9 @@ const SideBar = ({ isCollapsed = false, onToggle }) => {
     return location.pathname === path;
   };
 
+  // ── Main nav items with badge for inbox ──
   const mainNavItems = [
-    { id: 'inbox', label: 'Inbox', icon: Inbox, path: '/inbox', badge: null },
+    { id: 'inbox', label: 'Inbox', icon: Inbox, path: '/inbox', badge: unreadCount > 0 ? unreadCount : null },
     { id: 'starred', label: 'Starred', icon: Star, path: '/starred', badge: null },
     { id: 'sent', label: 'Sent', icon: Send, path: '/sent', badge: null },
     { id: 'archive', label: 'Archive', icon: Archive, path: '/archive', badge: null },
@@ -104,6 +117,7 @@ const SideBar = ({ isCollapsed = false, onToggle }) => {
   const NavItem = ({ item, collapsed: isCollapsed }) => {
     const Icon = item.icon;
     const active = isActive(item.path);
+    const hasBadge = item.badge && item.badge > 0;
     
     return (
       <button
@@ -115,15 +129,23 @@ const SideBar = ({ isCollapsed = false, onToggle }) => {
         } ${isCollapsed ? 'justify-center' : ''}`}
         title={isCollapsed ? item.label : ''}
       >
-        <Icon className={`w-5 h-5 ${active ? 'text-purple-600' : 'text-gray-500'}`} />
+        <div className="relative">
+          <Icon className={`w-5 h-5 ${active ? 'text-purple-600' : 'text-gray-500'}`} />
+          {/* Badge dot when collapsed */}
+          {isCollapsed && hasBadge && (
+            <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-red-500 rounded-full flex items-center justify-center text-[8px] text-white font-bold">
+              {item.badge > 9 ? '9+' : item.badge}
+            </span>
+          )}
+        </div>
         {!isCollapsed && (
           <span className={`flex-1 text-left ${active ? 'font-medium' : ''}`}>
             {item.label}
           </span>
         )}
-        {!isCollapsed && item.badge && (
-          <span className="bg-red-500 text-white text-xs px-2 py-0.5 rounded-full">
-            {item.badge}
+        {!isCollapsed && hasBadge && (
+          <span className="bg-red-500 text-white text-xs px-2 py-0.5 rounded-full min-w-[20px] text-center">
+            {item.badge > 99 ? '99+' : item.badge}
           </span>
         )}
       </button>
@@ -134,7 +156,6 @@ const SideBar = ({ isCollapsed = false, onToggle }) => {
     const [isHovered, setIsHovered] = useState(false);
     
     if (!isCollapsed) {
-      // When sidebar is expanded, show as normal section
       return (
         <div className="mt-4">
           <div className="px-3 py-1">
@@ -168,7 +189,6 @@ const SideBar = ({ isCollapsed = false, onToggle }) => {
       );
     }
 
-    // When sidebar is collapsed, show as icon with floating dropdown on hover
     return (
       <div 
         className="relative"
@@ -181,7 +201,6 @@ const SideBar = ({ isCollapsed = false, onToggle }) => {
           </div>
         </div>
 
-        {/* Floating dropdown that appears to the right */}
         {isHovered && (
           <div className="fixed left-20 top-1/2 -translate-y-1/2 bg-white rounded-xl shadow-xl border border-gray-100 min-w-[200px] z-50 overflow-hidden">
             <div className="p-2">

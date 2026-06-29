@@ -18,13 +18,14 @@ import {
 const Stats = () => {
   const { data, isLoading, error, refetch } = useGetEmailStatsQuery();
 
-  const stats = data?.data || {
-    totalSent: 0,
-    totalReceived: 0,
-    unread: 0,
-    starred: 0,
-    customEmailsCount: 0,
-    domainsCount: 0
+  // ✅ Safe extraction – even if data.data is empty, all fields get defaults
+  const stats = {
+    totalSent: data?.data?.totalSent ?? 0,
+    totalReceived: data?.data?.totalReceived ?? 0,
+    unread: data?.data?.unread ?? 0,
+    starred: data?.data?.starred ?? 0,
+    customEmailsCount: data?.data?.customEmailsCount ?? 0,
+    domainsCount: data?.data?.domainsCount ?? 0,
   };
 
   const totalEmails = stats.totalSent + stats.totalReceived;
@@ -115,7 +116,7 @@ const Stats = () => {
     );
   }
 
-  // Mobile View
+  // ─── Mobile View ────────────────────────────────────────────────────────────────
   const MobileView = () => (
     <div className="md:hidden bg-gray-50 min-h-screen pb-20">
       <div className="bg-white border-b border-gray-100 px-4 py-3 sticky top-0 z-10">
@@ -195,7 +196,7 @@ const Stats = () => {
     </div>
   );
 
-  // Desktop View
+  // ─── Desktop View ────────────────────────────────────────────────────────────────
   const DesktopView = () => (
     <div className="hidden md:block min-h-screen bg-gray-50">
       <div className="px-6 py-6 lg:px-8">

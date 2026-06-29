@@ -23,24 +23,16 @@ import {
   Shield
 } from 'lucide-react';
 import { format } from 'date-fns';
+import CreateCustomEmailModal from '../components/CreateCustomEmailModal';
+import EmailDetailsModal from '../components/EmailDetailsModal';
 
 const CustomEmails = () => {
   const { userInfo } = useSelector((state) => state.auth);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showDetailsModal, setShowDetailsModal] = useState(null);
-  const [username, setUsername] = useState('');
-  const [forwardToEmail, setForwardToEmail] = useState('');
-  const [isDefault, setIsDefault] = useState(false);
-  const [displayName, setDisplayName] = useState('');
-  const [signature, setSignature] = useState('');
-  const [profilePicture, setProfilePicture] = useState(null);
-  const [profilePreview, setProfilePreview] = useState(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
   const [copiedId, setCopiedId] = useState(null);
-  const [selectedResendConfigId, setSelectedResendConfigId] = useState('');
-
+  
+  // ── Fetch data ──
   const { data, isLoading, refetch } = useGetCustomEmailsQuery();
   const { data: accessibleDomainsData } = useGetAccessibleDomainsQuery();
   const [createCustomEmail] = useCreateCustomEmailMutation();
@@ -49,116 +41,23 @@ const CustomEmails = () => {
   const customEmails = data?.data?.emails || [];
   const accessibleDomains = accessibleDomainsData?.data || [];
 
-  // Check if user has permission to create custom emails
+  // ── Permission checks ──
   const canCreateCustomEmails = () => {
-    // Owner can always create
     if (domains.length > 0) return true;
-    
-    // Check team access for create permission
-    const hasCreatePermission = accessibleDomains.some(domain => 
+    return accessibleDomains.some(domain => 
       domain.permissions?.canCreateCustomEmails === true
     );
-    
-    return hasCreatePermission;
   };
 
-  // Check if user has permission to delete custom emails
   const canDeleteCustomEmails = (email) => {
-    // Owner can delete their own emails
     if (email.userId === userInfo?._id) return true;
-    
-    // Check team access for delete permission
-    const hasDeletePermission = accessibleDomains.some(domain => 
+    return accessibleDomains.some(domain => 
       domain.permissions?.canDeleteCustomEmails === true &&
       domain.domain === email.domain
     );
-    
-    return hasDeletePermission;
   };
 
-  // Check if email is from team domain (not owned by user)
-  const isTeamEmail = (email) => {
-    return email.userId !== userInfo?._id;
-  };
-
-  const handleFileChange = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      if (file.size > 5 * 1024 * 1024) {
-        setError('Profile picture must be less than 5MB');
-        return;
-      }
-      
-      const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
-      if (!allowedTypes.includes(file.type)) {
-        setError('Only image files are allowed (JPEG, PNG, GIF, WEBP)');
-        return;
-      }
-      
-      setProfilePicture(file);
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setProfilePreview(reader.result);
-      };
-      reader.readAsDataURL(file);
-    }
-  };
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setError('');
-    setSuccess('');
-    setIsSubmitting(true);
-
-    if (!selectedResendConfigId) {
-      setError('Please select a domain');
-      setIsSubmitting(false);
-      return;
-    }
-
-    if (!username) {
-      setError('Please enter a username');
-      setIsSubmitting(false);
-      return;
-    }
-
-    if (!forwardToEmail) {
-      setError('Please enter a forward email address');
-      setIsSubmitting(false);
-      return;
-    }
-
-    try {
-      const formData = new FormData();
-      formData.append('username', username);
-      formData.append('forwardToEmail', forwardToEmail);
-      formData.append('resendConfigId', selectedResendConfigId);
-      if (isDefault) formData.append('isDefault', true);
-      if (displayName) formData.append('displayName', displayName);
-      if (signature) formData.append('signature', signature);
-      if (profilePicture) formData.append('profilePicture', profilePicture);
-
-      await createCustomEmail(formData).unwrap();
-      
-      setUsername('');
-      setForwardToEmail('');
-      setIsDefault(false);
-      setDisplayName('');
-      setSignature('');
-      setProfilePicture(null);
-      setProfilePreview(null);
-      setSelectedResendConfigId('');
-      setShowCreateModal(false);
-      
-      refetch();
-      setSuccess('Custom email created successfully!');
-      setTimeout(() => setSuccess(''), 3000);
-    } catch (err) {
-      setError(err.data?.message || 'Failed to create custom email');
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
+  const isTeamEmail = (email) => email.userId !== userInfo?._id;
 
   const copyToClipboard = (text, id) => {
     navigator.clipboard.writeText(text);
@@ -168,39 +67,20 @@ const CustomEmails = () => {
 
   const getPermissionBadge = () => {
     if (domains.length > 0) {
-      return (
-        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-700">
-          <Shield className="w-3 h-3 mr-1" />
-          Owner
-        </span>
-      );
+      return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-700"><Shield className="w-3 h-3 mr-1" />Owner</span>;
     }
-    
     const teamDomain = accessibleDomains[0];
     if (teamDomain?.permissions?.canCreateCustomEmails) {
-      return (
-        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">
-          <CheckCircle className="w-3 h-3 mr-1" />
-          Can Create
-        </span>
-      );
+      return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700"><CheckCircle className="w-3 h-3 mr-1" />Can Create</span>;
     }
-    
-    return (
-      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
-        <Lock className="w-3 h-3 mr-1" />
-        View Only
-      </span>
-    );
+    return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600"><Lock className="w-3 h-3 mr-1" />View Only</span>;
   };
 
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
-        <div className="text-center">
-          <Loader2 className="w-10 h-10 text-purple-600 animate-spin mx-auto mb-3" />
-          <p className="text-gray-500 text-sm">Loading custom emails...</p>
-        </div>
+        <Loader2 className="w-10 h-10 text-purple-600 animate-spin mx-auto mb-3" />
+        <p className="text-gray-500 text-sm">Loading custom emails...</p>
       </div>
     );
   }
@@ -208,31 +88,40 @@ const CustomEmails = () => {
   const hasCreatePermission = canCreateCustomEmails();
   const availableDomains = [...domains, ...accessibleDomains.filter(d => d.permissions?.canCreateCustomEmails)];
 
+  // ── Delete handler (placeholder) ──
+  const handleDelete = (email) => {
+    if (window.confirm(`Delete ${email.email}?`)) {
+      // call delete mutation here
+      console.log('Delete:', email.email);
+    }
+  };
+
   return (
-    <div className="min-h-screen bg-gray-50 pb-20 lg:pb-0">
-      {/* Header */}
+    <div className="min-h-screen bg-gray-50 pb-16 lg:pb-0">
+      {/* ─── Header ─── */}
       <div className="bg-white border-b border-gray-100 sticky top-0 z-10">
-        <div className="px-4 py-4 lg:px-8">
+        <div className="px-4 py-3 lg:py-4 lg:px-8">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-2">
-              <div className="p-1.5 bg-purple-50 rounded-lg">
+              <div className="p-1.5 bg-purple-50 rounded-lg hidden sm:block">
                 <Mail className="w-5 h-5 text-purple-600" />
               </div>
               <div>
-                <h1 className="text-lg font-semibold text-gray-800">Custom Emails</h1>
-                <p className="text-xs text-gray-400 hidden lg:block">Manage your custom email addresses</p>
+                <h1 className="text-base sm:text-lg font-semibold text-gray-800">Custom Emails</h1>
+                <p className="text-xs text-gray-400 hidden sm:block">Manage your custom email addresses</p>
               </div>
             </div>
             <div className="flex items-center space-x-2">
-              {getPermissionBadge()}
+              <div className="hidden sm:block">{getPermissionBadge()}</div>
               {hasCreatePermission && (
                 <button
                   onClick={() => setShowCreateModal(true)}
                   disabled={availableDomains.length === 0}
-                  className="flex items-center space-x-1.5 px-3 py-1.5 bg-purple-600 text-white text-sm rounded-lg hover:bg-purple-700 transition shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="flex items-center space-x-1 px-3 py-1.5 bg-purple-600 text-white text-xs sm:text-sm rounded-lg hover:bg-purple-700 transition shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <Plus className="w-4 h-4" />
-                  <span>Create Email</span>
+                  <span className="hidden xs:inline">Create Email</span>
+                  <span className="xs:hidden">Create</span>
                 </button>
               )}
             </div>
@@ -240,15 +129,15 @@ const CustomEmails = () => {
           {!hasCreatePermission && customEmails.length > 0 && (
             <div className="mt-2 p-2 bg-blue-50 rounded-lg">
               <p className="text-xs text-blue-700 flex items-center space-x-1">
-                <Lock className="w-3 h-3" />
-                <span>You have view-only access to these emails. Contact your team admin to create custom emails.</span>
+                <Lock className="w-3 h-3 flex-shrink-0" />
+                <span>You have view‑only access. Contact your team admin to create emails.</span>
               </p>
             </div>
           )}
           {availableDomains.length === 0 && hasCreatePermission && (
             <div className="mt-2 p-2 bg-yellow-50 rounded-lg">
               <p className="text-xs text-yellow-700 flex items-center space-x-1">
-                <AlertCircle className="w-3 h-3" />
+                <AlertCircle className="w-3 h-3 flex-shrink-0" />
                 <span>Please add and verify a domain first before creating custom emails.</span>
               </p>
             </div>
@@ -256,14 +145,14 @@ const CustomEmails = () => {
         </div>
       </div>
 
-      {/* Content */}
-      <div className="px-4 py-4 lg:px-8">
+      {/* ─── Content ─── */}
+      <div className="px-3 sm:px-4 py-3 lg:px-8">
         {customEmails.length === 0 ? (
-          <div className="text-center py-16">
+          <div className="text-center py-12 sm:py-16">
             <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
               <Mail className="w-8 h-8 text-gray-400" />
             </div>
-            <p className="text-gray-500 font-medium">No custom emails created yet</p>
+            <p className="text-gray-500 font-medium">No custom emails yet</p>
             <p className="text-gray-400 text-sm mt-1">
               {hasCreatePermission 
                 ? 'Create your first custom email address'
@@ -281,55 +170,55 @@ const CustomEmails = () => {
         ) : (
           <div className="space-y-2">
             {/* Desktop Table Header */}
-            <div className="hidden lg:grid lg:grid-cols-12 gap-4 px-4 py-2 text-xs font-medium text-gray-500 uppercase tracking-wider">
+            <div className="hidden lg:grid lg:grid-cols-12 gap-4 px-4 py-2 text-xs font-medium text-gray-500 uppercase tracking-wider bg-white rounded-lg border border-gray-100">
               <div className="col-span-4">Email Address</div>
               <div className="col-span-3">Forward To</div>
               <div className="col-span-3">Created</div>
               <div className="col-span-2"></div>
             </div>
 
-            {/* Email List Items */}
+            {/* Email Cards */}
             {customEmails.map((email) => (
               <div
                 key={email._id}
                 className={`bg-white border border-gray-100 rounded-lg lg:rounded-none lg:border-x-0 lg:border-t-0 hover:bg-gray-50/50 transition ${isTeamEmail(email) ? 'border-l-4 border-l-indigo-400' : ''}`}
               >
-                <div className="p-4 lg:grid lg:grid-cols-12 lg:gap-4 lg:items-center lg:p-3">
-                  {/* Email Info */}
-                  <div className="lg:col-span-4 mb-3 lg:mb-0">
+                <div className="p-3 sm:p-4 lg:grid lg:grid-cols-12 lg:gap-4 lg:items-center lg:p-3">
+                  {/* Main Info */}
+                  <div className="lg:col-span-4 mb-2 lg:mb-0">
                     <div className="flex items-center space-x-3">
                       {email.profilePicture?.url ? (
                         <img
                           src={email.profilePicture.url}
                           alt={email.displayName}
-                          className="w-10 h-10 lg:w-8 lg:h-8 rounded-full object-cover"
+                          className="w-10 h-10 lg:w-8 lg:h-8 rounded-full object-cover flex-shrink-0"
                         />
                       ) : (
                         <div className="w-10 h-10 lg:w-8 lg:h-8 bg-purple-50 rounded-full flex items-center justify-center flex-shrink-0">
                           <User className="w-5 h-5 lg:w-4 lg:h-4 text-purple-600" />
                         </div>
                       )}
-                      <div>
-                        <div className="flex items-center space-x-2 flex-wrap gap-y-1">
-                          <p className="font-medium text-gray-800 text-sm lg:text-base">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center flex-wrap gap-1">
+                          <p className="font-medium text-gray-800 text-sm sm:text-base truncate">
                             {email.displayName || email.username}
                           </p>
                           {email.isDefault && (
-                            <span className="px-1.5 py-0.5 text-[10px] bg-green-100 text-green-700 rounded-full">
+                            <span className="px-1.5 py-0.5 text-[10px] bg-green-100 text-green-700 rounded-full whitespace-nowrap">
                               Default
                             </span>
                           )}
                           {isTeamEmail(email) && (
-                            <span className="px-1.5 py-0.5 text-[10px] bg-indigo-100 text-indigo-700 rounded-full">
+                            <span className="px-1.5 py-0.5 text-[10px] bg-indigo-100 text-indigo-700 rounded-full whitespace-nowrap">
                               Team
                             </span>
                           )}
                         </div>
                         <div className="flex items-center space-x-1 mt-0.5">
-                          <p className="text-xs text-gray-500">{email.email}</p>
+                          <p className="text-xs text-gray-500 truncate">{email.email}</p>
                           <button
                             onClick={() => copyToClipboard(email.email, email._id)}
-                            className="text-gray-400 hover:text-gray-600"
+                            className="text-gray-400 hover:text-gray-600 flex-shrink-0"
                           >
                             {copiedId === email._id ? (
                               <Check className="w-3 h-3 text-green-500" />
@@ -355,25 +244,20 @@ const CustomEmails = () => {
                   </div>
 
                   {/* Actions */}
-                  <div className="lg:col-span-2 flex items-center justify-between lg:justify-end mt-3 lg:mt-0">
-                    <div className="flex items-center space-x-3">
+                  <div className="lg:col-span-2 flex items-center justify-between lg:justify-end mt-2 lg:mt-0">
+                    <div className="flex items-center space-x-2">
                       <button
                         onClick={() => setShowDetailsModal(email)}
-                        className="text-gray-400 hover:text-purple-600 transition p-1"
-                        title="View Details"
+                        className="text-gray-400 hover:text-purple-600 transition p-1.5 lg:p-1"
+                        aria-label="View Details"
                       >
                         <Eye className="w-4 h-4" />
                       </button>
                       {canDeleteCustomEmails(email) && (
                         <button
-                          onClick={() => {
-                            if (window.confirm(`Are you sure you want to delete ${email.email}?`)) {
-                              // Call delete mutation here
-                              console.log('Delete:', email.email);
-                            }
-                          }}
-                          className="text-gray-400 hover:text-red-600 transition p-1"
-                          title="Delete Email"
+                          onClick={() => handleDelete(email)}
+                          className="text-gray-400 hover:text-red-600 transition p-1.5 lg:p-1"
+                          aria-label="Delete"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
@@ -384,9 +268,9 @@ const CustomEmails = () => {
                 </div>
 
                 {/* Mobile Extended Info */}
-                <div className="lg:hidden px-4 pb-4 pt-0 border-t border-gray-50 mt-2">
+                <div className="lg:hidden px-4 pb-4 pt-0 border-t border-gray-50 mt-1">
                   <div className="flex items-center justify-between text-xs">
-                    <span className="text-gray-500">Forward to:</span>
+                    <span className="text-gray-500">Forward:</span>
                     <span className="text-gray-600 truncate ml-2">{email.forwardToEmail}</span>
                   </div>
                   <div className="flex items-center justify-between text-xs mt-1">
@@ -414,313 +298,26 @@ const CustomEmails = () => {
         )}
       </div>
 
-      {/* Create Custom Email Modal - Only shown if user has permission */}
+      {/* ─── Modals ─── */}
       {showCreateModal && hasCreatePermission && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-end lg:items-center justify-center z-50 p-0 lg:p-4">
-          <div className="bg-white rounded-t-xl lg:rounded-xl shadow-xl w-full max-w-md max-h-[85vh] overflow-y-auto lg:max-h-[90vh]">
-            <div className="p-5 sticky top-0 bg-white border-b border-gray-100 z-10">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-2">
-                  <div className="p-1.5 bg-purple-50 rounded-lg">
-                    <Plus className="w-4 h-4 text-purple-600" />
-                  </div>
-                  <h2 className="text-lg font-semibold text-gray-800">Create Custom Email</h2>
-                </div>
-                <button
-                  onClick={() => {
-                    setShowCreateModal(false);
-                    setError('');
-                    setUsername('');
-                    setForwardToEmail('');
-                    setIsDefault(false);
-                    setDisplayName('');
-                    setSignature('');
-                    setProfilePicture(null);
-                    setProfilePreview(null);
-                    setSelectedResendConfigId('');
-                  }}
-                  className="text-gray-400 hover:text-gray-600"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-            </div>
-
-            <form onSubmit={handleSubmit} className="p-5 space-y-4 pb-8">
-              {error && (
-                <div className="p-3 bg-red-50 rounded-lg">
-                  <p className="text-sm text-red-600">{error}</p>
-                </div>
-              )}
-
-              {success && (
-                <div className="p-3 bg-green-50 rounded-lg">
-                  <p className="text-sm text-green-600">{success}</p>
-                </div>
-              )}
-
-              {/* Profile Picture */}
-              <div className="flex justify-center">
-                <label className="cursor-pointer">
-                  <div className="relative">
-                    {profilePreview ? (
-                      <img
-                        src={profilePreview}
-                        alt="Profile preview"
-                        className="w-16 h-16 rounded-full object-cover border-2 border-purple-200"
-                      />
-                    ) : (
-                      <div className="w-16 h-16 bg-purple-50 rounded-full flex items-center justify-center border-2 border-purple-200">
-                        <Camera className="w-6 h-6 text-purple-600" />
-                      </div>
-                    )}
-                    <div className="absolute bottom-0 right-0 bg-purple-600 rounded-full p-1 border-2 border-white">
-                      <Camera className="w-3 h-3 text-white" />
-                    </div>
-                  </div>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={handleFileChange}
-                    className="hidden"
-                  />
-                </label>
-              </div>
-
-              {/* Domain Selection */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Select Domain
-                </label>
-                <select
-                  value={selectedResendConfigId}
-                  onChange={(e) => setSelectedResendConfigId(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-400 focus:border-transparent outline-none text-sm"
-                  required
-                >
-                  <option value="">Select a domain</option>
-                  {availableDomains.map((domain) => (
-                    <option key={domain.id || domain.resendConfigId} value={domain.id || domain.resendConfigId}>
-                      {domain.domain}
-                      {domain.permissions?.canCreateCustomEmails && !domain.owner && ' (Team Access)'}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Username */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Username
-                </label>
-                <div className="flex items-center space-x-2">
-                  <input
-                    type="text"
-                    value={username}
-                    onChange={(e) => setUsername(e.target.value.toLowerCase())}
-                    placeholder="support"
-                    className="flex-1 px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-400 focus:border-transparent outline-none text-sm"
-                    required
-                  />
-                  <span className="text-gray-500 text-sm">@</span>
-                  <span className="text-gray-600 text-sm">
-                    {availableDomains.find(d => (d.id || d.resendConfigId) === selectedResendConfigId)?.domain || 'domain.com'}
-                  </span>
-                </div>
-              </div>
-
-              {/* Display Name */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Display Name (Optional)
-                </label>
-                <input
-                  type="text"
-                  value={displayName}
-                  onChange={(e) => setDisplayName(e.target.value)}
-                  placeholder="John Doe"
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-400 focus:border-transparent outline-none text-sm"
-                />
-              </div>
-
-              {/* Forward To Email */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Forward To Email
-                </label>
-                <input
-                  type="email"
-                  value={forwardToEmail}
-                  onChange={(e) => setForwardToEmail(e.target.value)}
-                  placeholder="your-personal@email.com"
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-400 focus:border-transparent outline-none text-sm"
-                  required
-                />
-                <p className="text-xs text-gray-400 mt-1">
-                  Emails will be forwarded to this address
-                </p>
-              </div>
-
-              {/* Signature */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Email Signature (Optional)
-                </label>
-                <textarea
-                  value={signature}
-                  onChange={(e) => setSignature(e.target.value)}
-                  rows="2"
-                  placeholder="Best regards,&#10;John Doe"
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-400 focus:border-transparent outline-none text-sm"
-                />
-              </div>
-
-              {/* Default Checkbox */}
-              <div className="flex items-center space-x-2">
-                <input
-                  type="checkbox"
-                  id="isDefault"
-                  checked={isDefault}
-                  onChange={(e) => setIsDefault(e.target.checked)}
-                  className="rounded border-gray-300 text-purple-600 focus:ring-purple-500"
-                />
-                <label htmlFor="isDefault" className="text-sm text-gray-700">
-                  Set as default email address
-                </label>
-              </div>
-
-              <div className="flex items-center space-x-3 pt-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowCreateModal(false);
-                    setError('');
-                    setUsername('');
-                    setForwardToEmail('');
-                    setIsDefault(false);
-                    setDisplayName('');
-                    setSignature('');
-                    setProfilePicture(null);
-                    setProfilePreview(null);
-                    setSelectedResendConfigId('');
-                  }}
-                  className="flex-1 px-4 py-2 border border-gray-200 text-gray-700 text-sm rounded-lg hover:bg-gray-50 transition"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="flex-1 px-4 py-2 bg-purple-600 text-white text-sm rounded-lg hover:bg-purple-700 transition disabled:opacity-50"
-                >
-                  {isSubmitting ? (
-                    <Loader2 className="w-4 h-4 animate-spin mx-auto" />
-                  ) : (
-                    'Create Email'
-                  )}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+        <CreateCustomEmailModal
+          availableDomains={availableDomains}
+          onClose={() => setShowCreateModal(false)}
+          onSuccess={() => {
+            refetch();
+            setShowCreateModal(false);
+          }}
+        />
       )}
 
-      {/* Email Details Modal */}
       {showDetailsModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-end lg:items-center justify-center z-50 p-0 lg:p-4">
-          <div className="bg-white rounded-t-xl lg:rounded-xl shadow-xl w-full max-w-md max-h-[85vh] overflow-y-auto">
-            <div className="p-5 sticky top-0 bg-white border-b border-gray-100 z-10">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-2">
-                  <div className="p-1.5 bg-purple-50 rounded-lg">
-                    <Mail className="w-4 h-4 text-purple-600" />
-                  </div>
-                  <h2 className="text-lg font-semibold text-gray-800">Email Details</h2>
-                </div>
-                <button
-                  onClick={() => setShowDetailsModal(null)}
-                  className="text-gray-400 hover:text-gray-600"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-            </div>
-
-            <div className="p-5 space-y-4 pb-8">
-              <div className="flex items-center space-x-3">
-                {showDetailsModal.profilePicture?.url ? (
-                  <img
-                    src={showDetailsModal.profilePicture.url}
-                    alt={showDetailsModal.displayName}
-                    className="w-12 h-12 rounded-full object-cover"
-                  />
-                ) : (
-                  <div className="w-12 h-12 bg-purple-50 rounded-full flex items-center justify-center">
-                    <User className="w-6 h-6 text-purple-600" />
-                  </div>
-                )}
-                <div>
-                  <p className="font-medium text-gray-800">{showDetailsModal.displayName || showDetailsModal.username}</p>
-                  <p className="text-sm text-gray-500">{showDetailsModal.email}</p>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <div className="flex justify-between py-2 border-b border-gray-100">
-                  <span className="text-sm text-gray-500">Forward To:</span>
-                  <span className="text-sm text-gray-700">{showDetailsModal.forwardToEmail}</span>
-                </div>
-                <div className="flex justify-between py-2 border-b border-gray-100">
-                  <span className="text-sm text-gray-500">Domain:</span>
-                  <span className="text-sm text-gray-700">{showDetailsModal.domain}</span>
-                </div>
-                <div className="flex justify-between py-2 border-b border-gray-100">
-                  <span className="text-sm text-gray-500">Created:</span>
-                  <span className="text-sm text-gray-700">
-                    {format(new Date(showDetailsModal.createdAt), 'MMM d, yyyy')}
-                  </span>
-                </div>
-                <div className="flex justify-between py-2 border-b border-gray-100">
-                  <span className="text-sm text-gray-500">Type:</span>
-                  <span className="text-sm">
-                    {isTeamEmail(showDetailsModal) ? (
-                      <span className="text-indigo-600">Team Access</span>
-                    ) : (
-                      <span className="text-purple-600">Owned</span>
-                    )}
-                  </span>
-                </div>
-                <div className="flex justify-between py-2 border-b border-gray-100">
-                  <span className="text-sm text-gray-500">Default:</span>
-                  <span className="text-sm">
-                    {showDetailsModal.isDefault ? (
-                      <CheckCircle className="w-4 h-4 text-green-500" />
-                    ) : (
-                      <X className="w-4 h-4 text-gray-400" />
-                    )}
-                  </span>
-                </div>
-                {showDetailsModal.signature && (
-                  <div className="py-2">
-                    <p className="text-sm text-gray-500 mb-1">Signature:</p>
-                    <p className="text-sm text-gray-700 whitespace-pre-wrap">{showDetailsModal.signature}</p>
-                  </div>
-                )}
-              </div>
-
-              <button
-                onClick={() => {
-                  copyToClipboard(showDetailsModal.email, showDetailsModal._id);
-                  setShowDetailsModal(null);
-                }}
-                className="w-full flex items-center justify-center space-x-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition"
-              >
-                <Copy className="w-4 h-4" />
-                <span>Copy Email Address</span>
-              </button>
-            </div>
-          </div>
-        </div>
+        <EmailDetailsModal
+          email={showDetailsModal}
+          isTeamEmail={isTeamEmail(showDetailsModal)}
+          onClose={() => setShowDetailsModal(null)}
+          onCopy={copyToClipboard}
+          copiedId={copiedId}
+        />
       )}
     </div>
   );
