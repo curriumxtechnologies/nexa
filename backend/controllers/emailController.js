@@ -320,18 +320,14 @@ const sendEmail = async (req, res) => {
 import { simpleParser } from 'mailparser';
 import { v2 as cloudinary } from 'cloudinary';
 
-// ─── Helper: Upload a file buffer to Cloudinary ─────────────────────────────
+// ─── Helper: Upload to Cloudinary ─────────────────────────────────────────────
 const uploadBufferToCloudinary = async (buffer, filename, mimeType) => {
   const base64 = buffer.toString('base64');
-  
   const resourceType = mimeType.startsWith('image/') ? 'image'
                      : mimeType.startsWith('video/') ? 'video'
                      : 'raw';
-
-  // Keep the original filename with extension
   const cleanFilename = filename.replace(/^.*[\\\/]/, '');
   const publicId = `${Date.now()}-${cleanFilename}`;
-
   const result = await cloudinary.uploader.upload(
     `data:${mimeType};base64,${base64}`,
     {
@@ -352,7 +348,6 @@ const receiveEmail = async (req, res) => {
     const { to, from, subject, email_id } = emailPayload;
 
     const toEmail = Array.isArray(to) ? to[0] : to;
-
     if (!toEmail) {
       return res.status(400).json({
         success: false,
@@ -360,42 +355,23 @@ const receiveEmail = async (req, res) => {
       });
     }
 
-    // Find custom email
-    const customEmail = await CustomEmail.findOne({
-      email: toEmail.toLowerCase(),
-      isActive: true,
-    });
-
+    // ── Find custom email, user, resend config (unchanged) ──
+    const customEmail = await CustomEmail.findOne({ email: toEmail.toLowerCase(), isActive: true });
     if (!customEmail) {
-      return res.status(404).json({
-        success: false,
-        message: 'No custom email found for this address',
-      });
+      return res.status(404).json({ success: false, message: 'No custom email found' });
     }
-
     const user = await User.findById(customEmail.userId);
     if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: 'User not found',
-      });
+      return res.status(404).json({ success: false, message: 'User not found' });
     }
-
     const resendConfig = user.resendConfigs.find(
-      c =>
-        (c.id === customEmail.resendConfigId ||
-          c._id?.toString() === customEmail.resendConfigId?.toString()) &&
-        c.isActive
+      c => (c.id === customEmail.resendConfigId || c._id?.toString() === customEmail.resendConfigId?.toString()) && c.isActive
     );
-
     if (!resendConfig) {
-      return res.status(404).json({
-        success: false,
-        message: 'Resend configuration not found for this email',
-      });
+      return res.status(404).json({ success: false, message: 'Resend config not found' });
     }
 
-    // Verify webhook signature
+    // ── Webhook signature verification (unchanged) ──
     if (resendConfig.webhookSecret) {
       const wh = new Webhook(resendConfig.webhookSecret);
       try {
@@ -406,17 +382,14 @@ const receiveEmail = async (req, res) => {
         });
       } catch (err) {
         console.error('Webhook signature verification failed');
-        return res.status(401).json({
-          success: false,
-          message: 'Invalid webhook signature',
-        });
+        return res.status(401).json({ success: false, message: 'Invalid webhook signature' });
       }
     }
 
-    // ─── Fetch the email metadata ──────────────────────────────────────
+    // ── Fetch email metadata & raw content ──────────────────────────────────
     let emailHtml = '';
     let emailText = '';
-    let attachmentLinksHtml = '';
+    let attachmentHtml = '';
 
     if (email_id) {
       const resend = new Resend(resendConfig.apiKey);
@@ -428,39 +401,61 @@ const receiveEmail = async (req, res) => {
           emailHtml = emailData.html || '';
           emailText = emailData.text || '';
 
-          // Download raw email if available
           if (emailData.raw?.download_url) {
-            console.log(`⬇️ Downloading raw email from: ${emailData.raw.download_url}`);
+            console.log(`⬇️ Downloading raw email...`);
             const rawResponse = await fetch(emailData.raw.download_url);
             if (!rawResponse.ok) {
               throw new Error(`Failed to download raw email: ${rawResponse.status}`);
             }
             const rawEmailBuffer = await rawResponse.arrayBuffer();
-
-            // Parse with mailparser
             const parsed = await simpleParser(Buffer.from(rawEmailBuffer));
             emailHtml = parsed.html || emailHtml;
             emailText = parsed.text || emailText;
 
-            // Process attachments
+            // ── Process attachments (styled cards) ──
             if (parsed.attachments && parsed.attachments.length > 0) {
-              console.log(`📎 Found ${parsed.attachments.length} attachments in raw email.`);
-              attachmentLinksHtml = '<br/><br/><strong>Attachments:</strong><br/>';
-
+              console.log(`📎 Found ${parsed.attachments.length} attachments.`);
+              const cards = [];
               for (const att of parsed.attachments) {
                 const filename = att.filename || 'file';
                 const mimeType = att.contentType || 'application/octet-stream';
-                const buffer = att.content; // Buffer
+                const buffer = att.content;
+                const fileSizeKB = Math.round(buffer.length / 1024);
 
                 try {
                   const url = await uploadBufferToCloudinary(buffer, filename, mimeType);
-                  attachmentLinksHtml += `<a href="${url}" download="${filename}">${filename}</a><br/>`;
-                  console.log(`✅ Uploaded attachment "${filename}" to Cloudinary`);
+                  // Choose an icon based on file extension
+                  const ext = filename.split('.').pop().toLowerCase();
+                  let icon = '📄';
+                  if (['pdf'].includes(ext)) icon = '📕';
+                  else if (['doc', 'docx'].includes(ext)) icon = '📘';
+                  else if (['xls', 'xlsx'].includes(ext)) icon = '📊';
+                  else if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext)) icon = '🖼️';
+                  else if (['zip', 'rar', '7z'].includes(ext)) icon = '📦';
+                  else if (['mp4', 'mov', 'avi'].includes(ext)) icon = '🎬';
+
+                  cards.push(`
+                    <div style="display: flex; align-items: center; gap: 8px; margin: 6px 0; padding: 8px 12px; background: #f3f4f6; border-radius: 8px; border: 1px solid #e5e7eb;">
+                      <span style="font-size: 20px;">${icon}</span>
+                      <a href="${url}" download="${filename}" style="flex: 1; color: #7c3aed; text-decoration: none; font-weight: 500; word-break: break-all;">
+                        ${filename}
+                      </a>
+                      <span style="color: #6b7280; font-size: 12px; white-space: nowrap;">${fileSizeKB} KB</span>
+                      <a href="${url}" download="${filename}" style="font-size: 16px; color: #4b5563; text-decoration: none;">⬇️</a>
+                    </div>
+                  `);
+                  console.log(`✅ Uploaded "${filename}" to Cloudinary`);
                 } catch (uploadError) {
                   console.error(`Failed to upload "${filename}":`, uploadError);
-                  attachmentLinksHtml += `${filename} (upload failed)<br/>`;
+                  cards.push(`
+                    <div style="display: flex; align-items: center; gap: 8px; margin: 6px 0; padding: 8px 12px; background: #fef2f2; border-radius: 8px; border: 1px solid #fecaca;">
+                      <span style="font-size: 20px;">❌</span>
+                      <span style="color: #dc2626;">${filename} (upload failed)</span>
+                    </div>
+                  `);
                 }
               }
+              attachmentHtml = `<br/><br/><strong>Attachments</strong><br/>${cards.join('')}`;
             }
           } else {
             console.warn('No raw.download_url found in email metadata.');
@@ -471,12 +466,12 @@ const receiveEmail = async (req, res) => {
       }
     }
 
-    // Append attachment links to the HTML content
-    if (attachmentLinksHtml) {
-      emailHtml += attachmentLinksHtml;
+    // Append attachment cards to the HTML content
+    if (attachmentHtml) {
+      emailHtml += attachmentHtml;
     }
 
-    // ─── Save email ────────────────────────────────────────────────────
+    // ── Save email ────────────────────────────────────────────────────
     const emailUuid = uuidv4();
     const receivedEmail = new Email({
       userId: user._id,
@@ -491,7 +486,7 @@ const receiveEmail = async (req, res) => {
       subject: subject || '(No Subject)',
       content: emailHtml || emailText || '',
       contentType: emailHtml ? 'html' : 'text',
-      attachments: [], // Empty to avoid validation
+      attachments: [], // empty to avoid validation
       status: 'received',
       receivedAt: new Date(),
       webhookData: req.body,
@@ -500,7 +495,7 @@ const receiveEmail = async (req, res) => {
 
     await receivedEmail.save();
 
-    // ─── Notifications & Forwarding ────────────────────────────────────
+    // ── Notifications & Forwarding (unchanged) ──────────────────────
     const preview = (emailHtml || emailText || '')
       .replace(/<[^>]*>/g, '')
       .substring(0, 100);

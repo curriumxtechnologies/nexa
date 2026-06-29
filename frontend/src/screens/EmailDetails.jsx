@@ -17,17 +17,11 @@ import {
   Reply,
   ReplyAll,
   Forward,
-  Download,
-  Paperclip,
   Loader2,
   AlertCircle,
   ChevronDown,
   ChevronUp,
   MoreVertical,
-  FileText,
-  File,
-  FileArchive,
-  FileImage,
   ZoomIn,
 } from 'lucide-react';
 import { format } from 'date-fns';
@@ -95,53 +89,6 @@ const formatQuotedContent = (originalEmail, mode) => {
   return cleanBody;
 };
 
-// ─── Attachment utilities ────────────────────────────────────────────────────
-
-// Get file extension from filename
-const getExtension = (filename) => filename?.split('.').pop().toLowerCase() || '';
-
-// Get a displayable URL for an attachment.
-// Different backends/serializers can name this field differently, so we check
-// every variant we've seen rather than assuming "url" or "content" only.
-// This is the fix for PDFs (and other non-image files) not rendering/opening:
-// previously only `url`, `content`, and `data` were checked, and many APIs put
-// the file under `fileUrl`, `downloadUrl`, `path`, `location`, or `s3Url`.
-const getAttachmentUrl = (attachment) => {
-  if (!attachment) return null;
-
-  const directUrlFields = ['url', 'fileUrl', 'downloadUrl', 'location', 's3Url', 'path', 'href', 'link'];
-  for (const field of directUrlFields) {
-    if (attachment[field]) return attachment[field];
-  }
-
-  // Base64 payload under various possible field names
-  const base64Fields = ['content', 'data', 'base64', 'fileContent'];
-  for (const field of base64Fields) {
-    const value = attachment[field];
-    if (value) {
-      if (typeof value === 'string' && value.startsWith('data:')) return value;
-      const mimeType = attachment.mimeType || attachment.contentType || attachment.type || 'application/octet-stream';
-      return `data:${mimeType};base64,${value}`;
-    }
-  }
-
-  return null;
-};
-
-const getMimeType = (attachment) =>
-  attachment?.mimeType || attachment?.contentType || attachment?.type || '';
-
-// Get file icon based on mime type or extension
-const getFileIcon = (mimeType, filename) => {
-  const ext = getExtension(filename);
-  if (mimeType?.startsWith('image/')) return <FileImage className="w-4 h-4 text-blue-500" />;
-  if (mimeType === 'application/pdf' || ext === 'pdf') return <FileText className="w-4 h-4 text-red-500" />;
-  if (mimeType?.includes('word') || ['doc', 'docx'].includes(ext)) return <FileText className="w-4 h-4 text-blue-700" />;
-  if (mimeType?.includes('excel') || ['xls', 'xlsx'].includes(ext)) return <FileText className="w-4 h-4 text-green-600" />;
-  if (mimeType?.includes('zip') || ['zip', 'rar'].includes(ext)) return <FileArchive className="w-4 h-4 text-yellow-600" />;
-  return <File className="w-4 h-4 text-gray-500" />;
-};
-
 // ─── Image Preview Modal ──────────────────────────────────────────────────────
 
 const ImagePreviewModal = ({ src, fileName, onClose }) => {
@@ -199,13 +146,6 @@ const EmailBubble = ({
   const preview = getPlainText(email.content).slice(0, 120);
   const isLong = getPlainText(email.content).length > 120 || email.content?.includes('<');
 
-  // Log attachments for debugging
-  useEffect(() => {
-    if (email.attachments?.length) {
-      console.log('📎 Attachments for email', email.emailId, email.attachments);
-    }
-  }, [email]);
-
   return (
     <div className={`flex flex-col mb-3 ${isSent ? 'items-end' : 'items-start'}`}>
       {!isSent && receivingAccount && (
@@ -240,9 +180,6 @@ const EmailBubble = ({
             )}
           </div>
           <div className="flex items-center gap-1.5 flex-shrink-0">
-            {email.attachments?.length > 0 && (
-              <Paperclip className={`w-3.5 h-3.5 ${isSent ? 'text-purple-200' : 'text-gray-400'}`} />
-            )}
             {isLong &&
               (expanded ? (
                 <ChevronUp className={`w-3.5 h-3.5 ${isSent ? 'text-purple-200' : 'text-gray-400'}`} />
@@ -283,123 +220,14 @@ const EmailBubble = ({
               )}
             </div>
             <div className={`border-t mb-2 ${isSent ? 'border-purple-500' : 'border-gray-100'}`} />
+
+            {/* ─── EMAIL CONTENT (includes attachment cards from backend) ─── */}
             <div
               className={`text-sm leading-relaxed prose prose-sm max-w-none ${
                 isSent ? 'prose-invert text-white' : 'text-gray-800'
               }`}
               dangerouslySetInnerHTML={{ __html: email.content }}
             />
-
-            {/* ─── ATTACHMENTS ─── */}
-            {email.attachments && email.attachments.length > 0 && (
-              <div className="mt-3 space-y-2">
-                <p className={`text-xs font-medium ${isSent ? 'text-purple-200' : 'text-gray-500'}`}>
-                  Attachments ({email.attachments.length})
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  {email.attachments.map((att, i) => {
-                    const fileUrl = getAttachmentUrl(att);
-                    const mimeType = getMimeType(att);
-                    const fileName = att.filename || att.originalName || att.name || 'file';
-                    const fileSize = att.fileSize || att.size || 0;
-                    const isImage = mimeType?.startsWith('image/') && !!fileUrl;
-
-                    // If we genuinely have no URL/base64 for this file, say so —
-                    // but this should now be rare since getAttachmentUrl checks
-                    // many more field name variants.
-                    if (!fileUrl) {
-                      return (
-                        <div
-                          key={i}
-                          className={`flex items-center gap-2 p-2 rounded-lg ${
-                            isSent ? 'bg-purple-500' : 'bg-gray-50'
-                          }`}
-                        >
-                          <div className={`w-8 h-8 rounded flex items-center justify-center ${isSent ? 'bg-purple-700' : 'bg-gray-200'}`}>
-                            <File className={`w-4 h-4 ${isSent ? 'text-white' : 'text-gray-500'}`} />
-                          </div>
-                          <span className={`text-xs ${isSent ? 'text-white' : 'text-gray-600'}`}>
-                            {fileName} (no URL)
-                          </span>
-                        </div>
-                      );
-                    }
-
-                    return (
-                      <div
-                        key={i}
-                        className={`flex items-center gap-2 p-2 rounded-lg ${
-                          isSent ? 'bg-purple-500 hover:bg-purple-400' : 'bg-gray-50 hover:bg-gray-100'
-                        } border border-transparent hover:border-gray-200 transition`}
-                      >
-                        {/* Thumbnail / Icon */}
-                        <div
-                          className="relative w-10 h-10 rounded flex items-center justify-center flex-shrink-0 cursor-pointer group"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            if (isImage) {
-                              onPreviewImage({ src: fileUrl, fileName });
-                            } else {
-                              window.open(fileUrl, '_blank', 'noopener,noreferrer');
-                            }
-                          }}
-                        >
-                          {isImage ? (
-                            <>
-                              <img
-                                src={fileUrl}
-                                alt={fileName}
-                                className="w-full h-full object-cover rounded"
-                              />
-                              {/* Zoom affordance on hover so it's clear it's previewable */}
-                              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 rounded flex items-center justify-center transition">
-                                <ZoomIn className="w-4 h-4 text-white opacity-0 group-hover:opacity-100 transition" />
-                              </div>
-                            </>
-                          ) : (
-                            <div className={`w-full h-full rounded flex items-center justify-center ${isSent ? 'bg-purple-700' : 'bg-purple-100'}`}>
-                              {getFileIcon(mimeType, fileName)}
-                            </div>
-                          )}
-                        </div>
-
-                        {/* File info */}
-                        <div
-                          className="flex-1 min-w-0 cursor-pointer"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            if (isImage) {
-                              onPreviewImage({ src: fileUrl, fileName });
-                            } else {
-                              window.open(fileUrl, '_blank', 'noopener,noreferrer');
-                            }
-                          }}
-                        >
-                          <p className={`text-xs font-medium truncate max-w-[120px] ${isSent ? 'text-white' : 'text-gray-700'}`}>
-                            {fileName}
-                          </p>
-                          <p className={`text-xs ${isSent ? 'text-purple-200' : 'text-gray-400'}`}>
-                            {fileSize ? `${Math.round(fileSize / 1024)} KB` : ''}
-                          </p>
-                        </div>
-
-                        {/* Download button */}
-                        <a
-                          href={fileUrl}
-                          download={fileName}
-                          target={fileUrl.startsWith('data:') ? undefined : '_blank'}
-                          rel="noopener noreferrer"
-                          className={`p-1 rounded hover:bg-opacity-20 ${isSent ? 'hover:bg-white' : 'hover:bg-gray-200'}`}
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <Download className={`w-3.5 h-3.5 ${isSent ? 'text-purple-200' : 'text-gray-400'}`} />
-                        </a>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
 
             <div
               className={`flex items-center gap-2 mt-3 pt-2 border-t ${
