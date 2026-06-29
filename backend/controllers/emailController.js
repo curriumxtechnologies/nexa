@@ -317,9 +317,7 @@ const sendEmail = async (req, res) => {
  * Receive email (webhook from Resend)
  * POST /api/email/webhook/receive
  */
-// In your emailController.js
-
-import { simpleParser } from 'mailparser';  // npm install mailparser
+import { simpleParser } from 'mailparser';
 import { v2 as cloudinary } from 'cloudinary';
 
 // ─── Helper: Upload a file buffer to Cloudinary ─────────────────────────────
@@ -408,7 +406,7 @@ const receiveEmail = async (req, res) => {
       }
     }
 
-    // ─── Fetch the raw email from Resend ──────────────────────────────
+    // ─── Fetch the email metadata ──────────────────────────────────────
     let emailHtml = '';
     let emailText = '';
     let attachmentLinksHtml = '';
@@ -416,44 +414,57 @@ const receiveEmail = async (req, res) => {
     if (email_id) {
       const resend = new Resend(resendConfig.apiKey);
       try {
-        // 1. Get the raw email content (full MIME)
-        const { data: rawEmail, error: rawError } = await resend.emails.receiving.getRaw(email_id);
-        if (rawError) {
-          console.error('Failed to fetch raw email:', rawError);
-          // Fallback: try to get HTML only
-          const { data: emailData } = await resend.emails.receiving.get(email_id);
-          emailHtml = emailData?.html || '';
-          emailText = emailData?.text || '';
-        } else {
-          // Parse the raw MIME using mailparser
-          const parsed = await simpleParser(rawEmail);
-          emailHtml = parsed.html || '';
-          emailText = parsed.text || '';
+        // 1. Get email metadata (includes raw.download_url)
+        const { data: emailData, error: fetchError } = await resend.emails.receiving.get(email_id);
+        if (fetchError) {
+          console.error('Failed to fetch email metadata:', fetchError);
+        } else if (emailData) {
+          emailHtml = emailData.html || '';
+          emailText = emailData.text || '';
 
-          // Process attachments
-          if (parsed.attachments && parsed.attachments.length > 0) {
-            console.log(`📎 Found ${parsed.attachments.length} attachments in raw email.`);
-            attachmentLinksHtml = '<br/><br/><strong>Attachments:</strong><br/>';
+          // 2. If we have a raw download URL, download and parse the full email
+          if (emailData.raw?.download_url) {
+            console.log(`⬇️ Downloading raw email from: ${emailData.raw.download_url}`);
+            const rawResponse = await fetch(emailData.raw.download_url);
+            if (!rawResponse.ok) {
+              throw new Error(`Failed to download raw email: ${rawResponse.status}`);
+            }
+            const rawEmailBuffer = await rawResponse.arrayBuffer();
 
-            for (const att of parsed.attachments) {
-              const filename = att.filename || 'file';
-              const mimeType = att.contentType || 'application/octet-stream';
-              const buffer = att.content; // Buffer
+            // 3. Parse the raw MIME with mailparser
+            const parsed = await simpleParser(Buffer.from(rawEmailBuffer));
 
-              try {
-                // Upload to Cloudinary
-                const url = await uploadBufferToCloudinary(buffer, filename, mimeType);
-                attachmentLinksHtml += `<a href="${url}" download="${filename}">${filename}</a><br/>`;
-                console.log(`✅ Uploaded attachment "${filename}" to Cloudinary`);
-              } catch (uploadError) {
-                console.error(`Failed to upload "${filename}":`, uploadError);
-                attachmentLinksHtml += `${filename} (upload failed)<br/>`;
+            // Use parsed HTML/text (more complete)
+            emailHtml = parsed.html || emailHtml;
+            emailText = parsed.text || emailText;
+
+            // 4. Process attachments
+            if (parsed.attachments && parsed.attachments.length > 0) {
+              console.log(`📎 Found ${parsed.attachments.length} attachments in raw email.`);
+              attachmentLinksHtml = '<br/><br/><strong>Attachments:</strong><br/>';
+
+              for (const att of parsed.attachments) {
+                const filename = att.filename || 'file';
+                const mimeType = att.contentType || 'application/octet-stream';
+                const buffer = att.content; // Buffer
+
+                try {
+                  // Upload to Cloudinary
+                  const url = await uploadBufferToCloudinary(buffer, filename, mimeType);
+                  attachmentLinksHtml += `<a href="${url}" download="${filename}">${filename}</a><br/>`;
+                  console.log(`✅ Uploaded attachment "${filename}" to Cloudinary`);
+                } catch (uploadError) {
+                  console.error(`Failed to upload "${filename}":`, uploadError);
+                  attachmentLinksHtml += `${filename} (upload failed)<br/>`;
+                }
               }
             }
+          } else {
+            console.warn('No raw.download_url found in email metadata.');
           }
         }
       } catch (fetchError) {
-        console.error('Error fetching email from Resend:', fetchError);
+        console.error('Error processing email:', fetchError);
       }
     }
 
@@ -477,7 +488,7 @@ const receiveEmail = async (req, res) => {
       subject: subject || '(No Subject)',
       content: emailHtml || emailText || '',
       contentType: emailHtml ? 'html' : 'text',
-      attachments: [], // We embed attachments as links in content
+      attachments: [], // Empty array to avoid validation errors
       status: 'received',
       receivedAt: new Date(),
       webhookData: req.body,
