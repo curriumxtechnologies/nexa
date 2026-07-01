@@ -62,7 +62,7 @@ const Domains = () => {
   const ownedDomains = data?.data || [];
   const teamDomains = accessibleData?.data || [];
   
-  const API_URL = import.meta.env.VITE_API_URL || 'https://nexa-api-d9rx.onrender.com';
+  const API_URL = import.meta.env.VITE_API_URL || 'https://nexa-tq69.onrender.com';
 
   const handleSubmit = async (e) => {
     e.preventDefault();

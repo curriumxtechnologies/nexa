@@ -27,6 +27,7 @@ app.use(cors({
         'http://localhost:5173',
         'https://nexa.curriumx.online',
         'https://localhost',
+        'https://nexa.lovohcreate.com',
     ],
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH','OPTIONS'],
