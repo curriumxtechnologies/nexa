@@ -2,18 +2,20 @@ import React, { useEffect, useState } from 'react';
 import { useCheckAppUpdateQuery, getAppDownloadUrl, useUpdateUserAppVersionMutation } from '../slices/appApiSlice';
 import { useSelector } from 'react-redux';
 import { App as CapacitorApp } from '@capacitor/app';
-import { PushNotifications } from '@capacitor/push-notifications'; // 👈 for listening to pushes
-import { 
-  Download, 
-  X, 
+import { PushNotifications } from '@capacitor/push-notifications';
+import {
+  Download,
+  X,
   AlertCircle,
   Loader2
 } from 'lucide-react';
-import { useMobilePushNotifications } from '../hooks/useMobilePushNotifications'; // 👈 your hook
+import { useMobilePushNotifications } from '../hooks/useMobilePushNotifications';
 
-// Optional: use semver for robust comparison
-// npm install semver
-// import * as semver from 'semver';
+// Helper to normalize version strings (strip 'v' prefix)
+const normalizeVersion = (v) => {
+  if (!v) return '';
+  return v.replace(/^v/i, '').trim();
+};
 
 const AppUpdateChecker = () => {
   const [isVisible, setIsVisible] = useState(false);
@@ -23,14 +25,26 @@ const AppUpdateChecker = () => {
   const [isDownloading, setIsDownloading] = useState(false);
   const [versionVerified, setVersionVerified] = useState(false);
   const [updateFromLogin, setUpdateFromLogin] = useState(null);
-  
+
   const { user, token, appUpdate } = useSelector((state) => state.auth);
   const [updateUserVersion] = useUpdateUserAppVersionMutation();
+  const { isSupported } = useMobilePushNotifications(); // just for awareness
 
-  // Hook to check if push is supported (we need it for isSupported)
-  const { isSupported } = useMobilePushNotifications();
+  // ---- 1. Debug: log component state ----
+  useEffect(() => {
+    console.log('🔍 AppUpdateChecker state:', {
+      isNative,
+      isLoadingVersion,
+      versionVerified,
+      currentVersion,
+      hasToken: !!token,
+      hasUpdate: !!updateFromLogin?.hasUpdate,
+      isVisible,
+      updateInfo: updateFromLogin || null,
+    });
+  }, [isNative, isLoadingVersion, versionVerified, currentVersion, token, updateFromLogin, isVisible]);
 
-  // --- 1. Check for update from login response ---
+  // ---- 2. Check for update from login response ----
   useEffect(() => {
     if (appUpdate?.hasUpdate) {
       console.log('📱 Update from login response:', appUpdate);
@@ -39,39 +53,42 @@ const AppUpdateChecker = () => {
     }
   }, [appUpdate]);
 
-  // --- 2. Get device version and verify on startup ---
+  // ---- 3. Get device version on startup ----
   useEffect(() => {
     const getAppVersion = async () => {
       try {
         const isNativePlatform = window.Capacitor?.isNativePlatform();
         setIsNative(!!isNativePlatform);
-        
+
         if (isNativePlatform) {
           const { Device } = await import('@capacitor/device');
           const info = await Device.getInfo();
-          
           let version = info.appVersion;
-          
+
+          // Prefer DB version if available
           if (user?.appVersion) {
             version = user.appVersion;
             setVersionVerified(true);
           } else {
-            const storedVersion = localStorage.getItem('appVersion');
-            if (storedVersion) version = storedVersion;
+            const stored = localStorage.getItem('appVersion');
+            if (stored) version = stored;
           }
-          
-          setCurrentVersion(version);
 
-          if (token && version) {
+          // Normalise version (remove 'v')
+          const normVersion = normalizeVersion(version);
+          setCurrentVersion(normVersion);
+
+          console.log('📱 Device version:', normVersion);
+
+          if (token && normVersion) {
             try {
               const result = await updateUserVersion({
                 token,
-                version
+                version: normVersion
               }).unwrap();
-              
               console.log('✅ Version verified on startup:', result);
               setVersionVerified(true);
-              
+
               if (result.data?.needsUpdate) {
                 console.log('📱 Update needed from startup check:', result.data.updateInfo);
                 setUpdateFromLogin({
@@ -88,6 +105,7 @@ const AppUpdateChecker = () => {
             setVersionVerified(true);
           }
         } else {
+          // Not native – still mark as verified so we don't block forever
           setVersionVerified(true);
         }
       } catch (error) {
@@ -101,20 +119,31 @@ const AppUpdateChecker = () => {
     getAppVersion();
   }, [user?.appVersion, token, updateUserVersion]);
 
-  // --- 3. Query for periodic updates (shorter poll: 2 minutes) ---
+  // ---- 4. Polling query (fallback currentVersion = '0.0.0') ----
+  const queryVersion = currentVersion || '0.0.0'; // ensure we always send something
   const { data, isLoading, error, refetch } = useCheckAppUpdateQuery(
-    { 
-      platform: 'android', 
-      currentVersion,
-      token: token || undefined
+    {
+      platform: 'android',
+      currentVersion: queryVersion,
+      token: token || undefined,
     },
-    { 
-      skip: !isNative || isLoadingVersion || !versionVerified || !currentVersion,
+    {
+      skip: !isNative || isLoadingVersion || !versionVerified,
       pollingInterval: 120000, // 2 minutes
     }
   );
 
-  // --- 4. Real‑time push notification listener (directly from Capacitor) ---
+  // ---- 5. Debug: log API response ----
+  useEffect(() => {
+    if (data) {
+      console.log('📡 API check response:', data);
+    }
+    if (error) {
+      console.error('❌ API check error:', error);
+    }
+  }, [data, error]);
+
+  // ---- 6. Real‑time push listener (Capacitor) ----
   useEffect(() => {
     if (!isNative) return;
 
@@ -125,16 +154,19 @@ const AppUpdateChecker = () => {
         pushListener = await PushNotifications.addListener(
           'pushNotificationReceived',
           (notification) => {
-            const data = notification?.data || notification?.payload || {};
-            console.log('📩 Push notification received:', data);
-            
-            if (data.type === 'APP_UPDATE') {
-              console.log('🔄 App update push received – refetching...');
+            console.log('📩 PUSH RECEIVED (raw):', notification);
+            const payload = notification?.data || notification?.payload || {};
+            console.log('📩 Extracted data:', payload);
+
+            if (payload.type === 'APP_UPDATE') {
+              console.log('🔄 APP_UPDATE push – calling refetch()');
               refetch();
+            } else {
+              console.log('⏭️ Ignoring push with type:', payload.type);
             }
           }
         );
-        console.log('✅ Push notification listener registered');
+        console.log('✅ Push listener registered');
       } catch (err) {
         console.error('❌ Failed to register push listener:', err);
       }
@@ -150,7 +182,7 @@ const AppUpdateChecker = () => {
     };
   }, [isNative, refetch]);
 
-  // --- 5. Resume listener (app comes to foreground) ---
+  // ---- 7. Resume listener (app comes to foreground) ----
   useEffect(() => {
     if (!isNative) return;
 
@@ -172,7 +204,7 @@ const AppUpdateChecker = () => {
     };
   }, [isNative, refetch]);
 
-  // --- 6. Handle update from API response ---
+  // ---- 8. Update from API response ----
   useEffect(() => {
     if (data?.data?.hasUpdate && !isLoading && !isLoadingVersion && versionVerified) {
       console.log('📱 Update from API check:', data.data);
@@ -183,11 +215,11 @@ const AppUpdateChecker = () => {
     }
   }, [data, isLoading, isLoadingVersion, versionVerified, updateFromLogin]);
 
-  // Determine if we have an update
+  // ---- 9. Determine if we have an update ----
   const hasUpdate = data?.data?.hasUpdate || updateFromLogin?.hasUpdate || false;
   const updateInfo = updateFromLogin?.hasUpdate ? updateFromLogin : data?.data;
 
-  // --- 7. Download handler ---
+  // ---- 10. Download handler ----
   const handleUpdateNow = async () => {
     if (!updateInfo?._id) {
       console.error('No version ID available');
@@ -217,7 +249,6 @@ const AppUpdateChecker = () => {
       if (!updateInfo?.isRequired) {
         setIsVisible(false);
       }
-
     } catch (error) {
       console.error('Download failed:', error);
     } finally {
@@ -237,166 +268,202 @@ const AppUpdateChecker = () => {
     }
   };
 
-  // --- Render condition ---
-  if (!isNative || isLoading || isLoadingVersion || !versionVerified) return null;
-  if (!hasUpdate || !updateInfo) return null;
+  // ---- 11. Manual refetch (debug) ----
+  const forceCheck = () => {
+    console.log('🔄 Manual refetch triggered');
+    refetch();
+  };
 
-  const isRequired = updateInfo?.isRequired;
+  // ---- 12. Render ----
+  if (!isNative || isLoading || isLoadingVersion || !versionVerified) {
+    // Optionally show a loading indicator? Not needed for now.
+    return null;
+  }
+
+  // Even if no update, we still render the debug button in dev
+  const isDev = import.meta.env.DEV;
 
   return (
     <>
-      {/* Desktop Banner */}
-      <div className="hidden md:block fixed bottom-4 right-4 z-50 max-w-sm animate-in slide-in-from-bottom-5 duration-300">
-        <div className={`rounded-xl shadow-2xl border ${
-          isRequired 
-            ? 'bg-red-50 border-red-200' 
-            : 'bg-white border-gray-200'
-        } p-4`}>
-          <div className="flex items-start gap-3">
-            <div className={`p-2 rounded-lg ${
-              isRequired ? 'bg-red-100' : 'bg-purple-100'
-            }`}>
-              {isRequired ? (
-                <AlertCircle className="w-5 h-5 text-red-600" />
-              ) : (
-                <Download className="w-5 h-5 text-purple-600" />
-              )}
-            </div>
-            <div className="flex-1">
-              <h3 className={`font-semibold text-sm ${
-                isRequired ? 'text-red-800' : 'text-gray-800'
-              }`}>
-                {isRequired ? 'Update Required' : 'New Update Available'}
-              </h3>
-              <p className="text-xs text-gray-600 mt-1">
-                Version {updateInfo?.version} is now available.
-                {currentVersion && (
-                  <span className="block text-gray-400 text-[10px] mt-0.5">
-                    Your current version: v{currentVersion}
-                  </span>
-                )}
-              </p>
-              {updateInfo?.releaseNotes && (
-                <p className="text-xs text-gray-500 mt-1 line-clamp-2">
-                  {updateInfo.releaseNotes}
-                </p>
-              )}
-              <div className="flex items-center gap-2 mt-3">
-                <button
-                  onClick={handleUpdateNow}
-                  disabled={isDownloading}
-                  className={`flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-lg transition ${
-                    isRequired
-                      ? 'bg-red-600 text-white hover:bg-red-700'
-                      : 'bg-purple-600 text-white hover:bg-purple-700'
-                  } ${isDownloading ? 'opacity-50 cursor-not-allowed' : ''}`}
-                >
-                  {isDownloading ? (
-                    <>
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      <span>Downloading...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Download className="w-3.5 h-3.5" />
-                      <span>Update Now</span>
-                    </>
-                  )}
-                </button>
-                {!isRequired && !isDownloading && (
-                  <button
-                    onClick={handleLater}
-                    className="px-3 py-1.5 text-xs text-gray-500 hover:bg-gray-100 rounded-lg transition"
-                  >
-                    Later
-                  </button>
-                )}
-              </div>
-            </div>
-            {!isRequired && !isDownloading && (
-              <button
-                onClick={handleDismiss}
-                className="p-1 text-gray-400 hover:text-gray-600 rounded-lg transition"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
+      {/* Debug button (only in development) */}
+      {isDev && (
+        <button
+          onClick={forceCheck}
+          style={{
+            position: 'fixed',
+            bottom: 80,
+            right: 10,
+            zIndex: 9999,
+            background: 'blue',
+            color: 'white',
+            padding: '8px 12px',
+            borderRadius: 8,
+            fontSize: 12,
+            fontWeight: 'bold',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+          }}
+        >
+          Force Check
+        </button>
+      )}
 
-      {/* Mobile Banner */}
-      <div className="md:hidden fixed bottom-0 left-0 right-0 z-50 animate-in slide-in-from-bottom-5 duration-300">
-        <div className={`rounded-t-2xl shadow-2xl border-t ${
-          isRequired 
-            ? 'bg-red-50 border-red-200' 
-            : 'bg-white border-gray-200'
-        } p-4`}>
-          <div className="flex items-start gap-3">
-            <div className={`p-2 rounded-lg ${
-              isRequired ? 'bg-red-100' : 'bg-purple-100'
-            }`}>
-              {isRequired ? (
-                <AlertCircle className="w-5 h-5 text-red-600" />
-              ) : (
-                <Download className="w-5 h-5 text-purple-600" />
-              )}
-            </div>
-            <div className="flex-1">
-              <h3 className={`font-semibold text-sm ${
-                isRequired ? 'text-red-800' : 'text-gray-800'
-              }`}>
-                {isRequired ? 'Update Required' : 'New Update Available'}
-              </h3>
-              <p className="text-xs text-gray-600 mt-1">
-                Version {updateInfo?.version} is now available.
-              </p>
-              {updateInfo?.releaseNotes && (
-                <p className="text-xs text-gray-500 mt-1">
-                  {updateInfo.releaseNotes.length > 80 
-                    ? updateInfo.releaseNotes.slice(0, 80) + '...' 
-                    : updateInfo.releaseNotes}
-                </p>
-              )}
-              <div className="flex items-center gap-2 mt-3">
-                <button
-                  onClick={handleUpdateNow}
-                  disabled={isDownloading}
-                  className={`flex-1 flex items-center justify-center gap-1 py-2 text-sm font-medium rounded-lg transition ${
-                    isRequired
-                      ? 'bg-red-600 text-white hover:bg-red-700'
-                      : 'bg-purple-600 text-white hover:bg-purple-700'
-                  } ${isDownloading ? 'opacity-50 cursor-not-allowed' : ''}`}
-                >
-                  {isDownloading ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>Downloading...</span>
-                    </>
+      {/* Only show update banner if we have an update */}
+      {hasUpdate && updateInfo && (
+        <>
+          {/* Desktop Banner */}
+          <div className="hidden md:block fixed bottom-4 right-4 z-50 max-w-sm animate-in slide-in-from-bottom-5 duration-300">
+            <div className={`rounded-xl shadow-2xl border ${
+              updateInfo.isRequired
+                ? 'bg-red-50 border-red-200'
+                : 'bg-white border-gray-200'
+            } p-4`}>
+              <div className="flex items-start gap-3">
+                <div className={`p-2 rounded-lg ${
+                  updateInfo.isRequired ? 'bg-red-100' : 'bg-purple-100'
+                }`}>
+                  {updateInfo.isRequired ? (
+                    <AlertCircle className="w-5 h-5 text-red-600" />
                   ) : (
-                    <>
-                      <Download className="w-4 h-4" />
-                      <span>Download Update</span>
-                    </>
+                    <Download className="w-5 h-5 text-purple-600" />
                   )}
-                </button>
-                {!isRequired && !isDownloading && (
+                </div>
+                <div className="flex-1">
+                  <h3 className={`font-semibold text-sm ${
+                    updateInfo.isRequired ? 'text-red-800' : 'text-gray-800'
+                  }`}>
+                    {updateInfo.isRequired ? 'Update Required' : 'New Update Available'}
+                  </h3>
+                  <p className="text-xs text-gray-600 mt-1">
+                    Version {updateInfo.version} is now available.
+                    {currentVersion && (
+                      <span className="block text-gray-400 text-[10px] mt-0.5">
+                        Your current version: v{currentVersion}
+                      </span>
+                    )}
+                  </p>
+                  {updateInfo.releaseNotes && (
+                    <p className="text-xs text-gray-500 mt-1 line-clamp-2">
+                      {updateInfo.releaseNotes}
+                    </p>
+                  )}
+                  <div className="flex items-center gap-2 mt-3">
+                    <button
+                      onClick={handleUpdateNow}
+                      disabled={isDownloading}
+                      className={`flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-lg transition ${
+                        updateInfo.isRequired
+                          ? 'bg-red-600 text-white hover:bg-red-700'
+                          : 'bg-purple-600 text-white hover:bg-purple-700'
+                      } ${isDownloading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    >
+                      {isDownloading ? (
+                        <>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          <span>Downloading...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Download className="w-3.5 h-3.5" />
+                          <span>Update Now</span>
+                        </>
+                      )}
+                    </button>
+                    {!updateInfo.isRequired && !isDownloading && (
+                      <button
+                        onClick={handleLater}
+                        className="px-3 py-1.5 text-xs text-gray-500 hover:bg-gray-100 rounded-lg transition"
+                      >
+                        Later
+                      </button>
+                    )}
+                  </div>
+                </div>
+                {!updateInfo.isRequired && !isDownloading && (
                   <button
-                    onClick={handleLater}
-                    className="px-4 py-2 text-sm text-gray-500 hover:bg-gray-100 rounded-lg transition"
+                    onClick={handleDismiss}
+                    className="p-1 text-gray-400 hover:text-gray-600 rounded-lg transition"
                   >
-                    Later
+                    <X className="w-4 h-4" />
                   </button>
                 )}
               </div>
             </div>
           </div>
-        </div>
-      </div>
 
-      {/* Required Update Overlay */}
-      {isRequired && isVisible && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 z-40" />
+          {/* Mobile Banner */}
+          <div className="md:hidden fixed bottom-0 left-0 right-0 z-50 animate-in slide-in-from-bottom-5 duration-300">
+            <div className={`rounded-t-2xl shadow-2xl border-t ${
+              updateInfo.isRequired
+                ? 'bg-red-50 border-red-200'
+                : 'bg-white border-gray-200'
+            } p-4`}>
+              <div className="flex items-start gap-3">
+                <div className={`p-2 rounded-lg ${
+                  updateInfo.isRequired ? 'bg-red-100' : 'bg-purple-100'
+                }`}>
+                  {updateInfo.isRequired ? (
+                    <AlertCircle className="w-5 h-5 text-red-600" />
+                  ) : (
+                    <Download className="w-5 h-5 text-purple-600" />
+                  )}
+                </div>
+                <div className="flex-1">
+                  <h3 className={`font-semibold text-sm ${
+                    updateInfo.isRequired ? 'text-red-800' : 'text-gray-800'
+                  }`}>
+                    {updateInfo.isRequired ? 'Update Required' : 'New Update Available'}
+                  </h3>
+                  <p className="text-xs text-gray-600 mt-1">
+                    Version {updateInfo.version} is now available.
+                  </p>
+                  {updateInfo.releaseNotes && (
+                    <p className="text-xs text-gray-500 mt-1">
+                      {updateInfo.releaseNotes.length > 80
+                        ? updateInfo.releaseNotes.slice(0, 80) + '...'
+                        : updateInfo.releaseNotes}
+                    </p>
+                  )}
+                  <div className="flex items-center gap-2 mt-3">
+                    <button
+                      onClick={handleUpdateNow}
+                      disabled={isDownloading}
+                      className={`flex-1 flex items-center justify-center gap-1 py-2 text-sm font-medium rounded-lg transition ${
+                        updateInfo.isRequired
+                          ? 'bg-red-600 text-white hover:bg-red-700'
+                          : 'bg-purple-600 text-white hover:bg-purple-700'
+                      } ${isDownloading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    >
+                      {isDownloading ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          <span>Downloading...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Download className="w-4 h-4" />
+                          <span>Download Update</span>
+                        </>
+                      )}
+                    </button>
+                    {!updateInfo.isRequired && !isDownloading && (
+                      <button
+                        onClick={handleLater}
+                        className="px-4 py-2 text-sm text-gray-500 hover:bg-gray-100 rounded-lg transition"
+                      >
+                        Later
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Required Update Overlay */}
+          {updateInfo.isRequired && isVisible && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 z-40" />
+          )}
+        </>
       )}
     </>
   );
