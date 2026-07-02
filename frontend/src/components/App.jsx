@@ -1,6 +1,6 @@
 // screens/App.jsx
 import React, { useState, useEffect } from 'react';
-import { Download, Smartphone, CheckCircle, XCircle, Loader2, AlertCircle, ExternalLink } from 'lucide-react';
+import { Download, Smartphone, CheckCircle, XCircle, Loader2, AlertCircle, ChevronDown, Sparkles, Zap } from 'lucide-react';
 import { useGetAppVersionsQuery } from '../slices/adminApiSlice';
 import { getAppDownloadUrl, useUpdateUserAppVersionMutation } from '../slices/appApiSlice';
 import { useSelector } from 'react-redux';
@@ -12,9 +12,8 @@ const App = () => {
   const [isLoadingVersion, setIsLoadingVersion] = useState(true);
   const [isNative, setIsNative] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
-  const [downloadSuccess, setDownloadSuccess] = useState(false);
+  const [showAllVersions, setShowAllVersions] = useState(false);
   
-  // Get user and token from Redux
   const { user, token } = useSelector((state) => state.auth);
   
   const { data, isLoading, error, refetch } = useGetAppVersionsQuery({ platform: 'android' });
@@ -32,7 +31,6 @@ const App = () => {
           const { Device } = await import('@capacitor/device');
           const info = await Device.getInfo();
           
-          // Use stored version from Redux or localStorage
           let version = info.appVersion;
           
           if (user?.appVersion) {
@@ -46,7 +44,6 @@ const App = () => {
           
           setCurrentVersion(version);
         } else {
-          // For web, try to get from localStorage
           const storedVersion = localStorage.getItem('appVersion');
           setCurrentVersion(storedVersion || '1.0.0');
         }
@@ -75,14 +72,9 @@ const App = () => {
     setIsDownloading(true);
 
     try {
-      // 🔄 HYBRID APPROACH: Update user's version on download
-      // Get download URL with token if available
       const downloadUrl = getAppDownloadUrl(selectedVersion._id, token);
-      
-      // Open download in system browser
       window.open(downloadUrl, isNative ? '_system' : '_blank');
 
-      // 🔄 HYBRID APPROACH: Update user's app version in database if token exists
       if (token && user?.id) {
         try {
           await updateUserVersion({
@@ -90,25 +82,19 @@ const App = () => {
             version: selectedVersion.version
           }).unwrap();
           console.log('✅ User version updated successfully on download');
-          
-          // Update local state
           setCurrentVersion(selectedVersion.version);
-          setDownloadSuccess(true);
         } catch (updateError) {
           console.error('❌ Failed to update version in database:', updateError);
         }
       }
 
-      // Store version in localStorage as backup
       localStorage.setItem('appVersion', selectedVersion.version);
 
-      // Show success state briefly
       setTimeout(() => {
         setShowModal(false);
         setIsDownloading(false);
-        setDownloadSuccess(false);
         setSelectedVersion(null);
-      }, 1500);
+      }, 1000);
 
     } catch (error) {
       console.error('Download failed:', error);
@@ -121,24 +107,29 @@ const App = () => {
     if (!bytes) return 'Unknown';
     const sizes = ['B', 'KB', 'MB', 'GB'];
     const i = Math.floor(Math.log(bytes) / Math.log(1024));
-    return parseFloat((bytes / Math.pow(1024, i)).toFixed(2)) + ' ' + sizes[i];
+    return parseFloat((bytes / Math.pow(1024, i)).toFixed(1)) + ' ' + sizes[i];
   };
 
   const formatDate = (date) => {
     if (!date) return 'Unknown';
     return new Date(date).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric'
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric'
     });
   };
 
   if (isLoading || isLoadingVersion) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-gray-50">
+      <div className="min-h-screen bg-gradient-to-b from-purple-50 to-white flex items-center justify-center">
         <div className="text-center">
-          <Loader2 className="w-12 h-12 text-purple-600 animate-spin mx-auto mb-4" />
-          <p className="text-gray-500">Loading app versions...</p>
+          <div className="w-16 h-16 bg-gradient-to-br from-purple-500 to-purple-600 rounded-2xl flex items-center justify-center mx-auto mb-4 animate-pulse">
+            <Smartphone className="w-8 h-8 text-white" />
+          </div>
+          <div className="flex items-center justify-center gap-2">
+            <Loader2 className="w-5 h-5 text-purple-600 animate-spin" />
+            <p className="text-sm text-gray-500">Loading...</p>
+          </div>
         </div>
       </div>
     );
@@ -146,14 +137,15 @@ const App = () => {
 
   if (error) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-gray-50">
-        <div className="text-center px-6">
-          <AlertCircle className="w-16 h-16 text-red-400 mx-auto mb-4" />
-          <p className="text-gray-700 font-medium mb-2">Failed to load app versions</p>
-          <p className="text-gray-400 text-sm mb-4">{error.data?.message || 'Something went wrong'}</p>
+      <div className="min-h-screen bg-gradient-to-b from-purple-50 to-white flex items-center justify-center px-4">
+        <div className="text-center">
+          <div className="w-16 h-16 bg-gray-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+            <AlertCircle className="w-8 h-8 text-gray-400" />
+          </div>
+          <p className="text-gray-600 text-sm mb-4">Failed to load app versions</p>
           <button 
             onClick={() => refetch()} 
-            className="px-6 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition"
+            className="px-6 py-2.5 bg-purple-600 text-white text-sm font-medium rounded-xl hover:bg-purple-700 transition shadow-lg shadow-purple-200"
           >
             Try Again
           </button>
@@ -162,240 +154,243 @@ const App = () => {
     );
   }
 
+  const needsUpdate = currentVersion && latestVersion && currentVersion !== latestVersion.version;
+
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <div className="bg-white border-b border-gray-100 sticky top-0 z-10">
-        <div className="max-w-7xl mx-auto px-4 py-4 sm:px-6 lg:px-8">
+    <div className="min-h-screen bg-gradient-to-b from-purple-50 to-white">
+      {/* Dramatic Header */}
+      <header className="bg-white/80 backdrop-blur-lg border-b border-purple-100/50 sticky top-0 z-10">
+        <div className="max-w-3xl mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-3">
-              <div className="w-10 h-10 bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl flex items-center justify-center">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg shadow-purple-200">
                 <Smartphone className="w-5 h-5 text-white" />
               </div>
               <div>
-                <h1 className="text-xl font-bold text-gray-900">Nexa Mobile App</h1>
-                <p className="text-xs text-gray-500">Download the latest version</p>
+                <h1 className="text-lg font-bold text-gray-900">Nexa</h1>
+                <p className="text-[10px] text-gray-400 font-medium">Mobile App</p>
               </div>
             </div>
-            {/* Show user's current version in header */}
             {currentVersion && (
-              <div className="hidden sm:block text-right">
-                <p className="text-xs text-gray-400">Your version</p>
-                <p className="text-sm font-medium text-gray-700">v{currentVersion}</p>
+              <div className="bg-purple-50 px-3 py-1.5 rounded-full border border-purple-100">
+                <span className="text-xs font-medium text-purple-700">v{currentVersion}</span>
               </div>
             )}
           </div>
         </div>
-      </div>
+      </header>
 
-      <div className="max-w-7xl mx-auto px-4 py-8 sm:px-6 lg:px-8">
-        {/* Latest Version Banner */}
+      <div className="max-w-3xl mx-auto px-4 py-6">
+        {/* Dramatic Hero Banner */}
         {latestVersion && (
-          <div className={`bg-gradient-to-r from-purple-600 to-purple-700 rounded-2xl p-6 mb-8 text-white ${
-            currentVersion && latestVersion.version !== currentVersion ? 'ring-2 ring-yellow-400 ring-offset-2' : ''
-          }`}>
-            <div className="flex flex-col lg:flex-row items-center justify-between gap-6">
-              <div className="flex-1">
-                <div className="inline-flex items-center gap-2 bg-white/20 rounded-full px-3 py-1 mb-3">
-                  <CheckCircle className="w-3.5 h-3.5" />
-                  <span className="text-xs font-medium">Latest Version</span>
-                </div>
-                <h2 className="text-2xl font-bold mb-2">Version {latestVersion.version}</h2>
-                {latestVersion.releaseNotes && (
-                  <p className="text-purple-100 text-sm mb-4">{latestVersion.releaseNotes}</p>
-                )}
-                <div className="flex flex-wrap gap-4 text-sm text-purple-200">
-                  <div className="flex items-center gap-1">
-                    <span>Released:</span>
-                    <span>{formatDate(latestVersion.releasedAt)}</span>
+          <div className={`
+            relative overflow-hidden rounded-2xl p-6 mb-6
+            ${needsUpdate 
+              ? 'bg-gradient-to-br from-purple-600 to-purple-700' 
+              : 'bg-gradient-to-br from-gray-800 to-gray-900'
+            }
+          `}>
+            {/* Decorative elements */}
+            <div className="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full blur-2xl -translate-y-1/2 translate-x-1/2" />
+            <div className="absolute bottom-0 left-0 w-24 h-24 bg-white/5 rounded-full blur-2xl translate-y-1/2 -translate-x-1/2" />
+            
+            <div className="relative">
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-2 flex-wrap">
+                    <span className="text-2xl font-bold text-white">v{latestVersion.version}</span>
+                    {needsUpdate && (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-yellow-400/20 text-yellow-200 text-xs font-medium rounded-full border border-yellow-400/30">
+                        <Zap className="w-3 h-3" />
+                        Update Available
+                      </span>
+                    )}
+                    {latestVersion.isRequired && (
+                      <span className="px-2.5 py-1 bg-red-500/20 text-red-200 text-xs font-medium rounded-full border border-red-400/30">
+                        Required
+                      </span>
+                    )}
                   </div>
-                  <div className="flex items-center gap-1">
-                    <span>Size:</span>
-                    <span>{formatFileSize(latestVersion.fileSize)}</span>
+                  
+                  {latestVersion.releaseNotes && (
+                    <p className="text-white/80 text-sm mb-3 line-clamp-2">
+                      {latestVersion.releaseNotes}
+                    </p>
+                  )}
+                  
+                  <div className="flex items-center gap-3 text-xs text-white/60">
+                    <span className="flex items-center gap-1">
+                      <span className="w-1 h-1 bg-white/40 rounded-full" />
+                      {formatFileSize(latestVersion.fileSize)}
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <span className="w-1 h-1 bg-white/40 rounded-full" />
+                      {formatDate(latestVersion.releasedAt)}
+                    </span>
                   </div>
-                  {latestVersion.isRequired && (
-                    <div className="flex items-center gap-1">
-                      <AlertCircle className="w-4 h-4" />
-                      <span>Required Update</span>
-                    </div>
-                  )}
-                  {currentVersion && latestVersion.version !== currentVersion && (
-                    <div className="flex items-center gap-1 bg-yellow-400/20 px-2 py-1 rounded-lg">
-                      <span className="text-yellow-200">⬆</span>
-                      <span className="text-yellow-100 text-xs">Update available</span>
-                    </div>
-                  )}
                 </div>
+                
+                <button
+                  onClick={() => handleDownload(latestVersion)}
+                  className={`
+                    flex-shrink-0 px-5 py-2.5 rounded-xl font-semibold text-sm
+                    transition-all duration-200 shadow-lg
+                    ${needsUpdate 
+                      ? 'bg-white text-purple-600 hover:bg-purple-50 hover:scale-105 shadow-purple-500/30' 
+                      : 'bg-purple-500 text-white hover:bg-purple-400 hover:scale-105 shadow-purple-500/30'
+                    }
+                  `}
+                >
+                  {needsUpdate ? 'Update Now' : 'Download'}
+                </button>
               </div>
-              <button
-                onClick={() => handleDownload(latestVersion)}
-                className="inline-flex items-center gap-2 px-6 py-3 bg-white text-purple-600 rounded-xl hover:bg-gray-100 transition font-semibold shadow-lg"
-              >
-                <Download className="w-5 h-5" />
-                {currentVersion && latestVersion.version !== currentVersion ? 'Update Now' : 'Download APK'}
-              </button>
             </div>
           </div>
         )}
 
-        {/* All Versions Section */}
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-          <div className="px-6 py-4 border-b border-gray-100">
-            <h3 className="text-lg font-semibold text-gray-900">All Versions</h3>
-            <p className="text-sm text-gray-500">Previous releases and updates</p>
+        {/* Version Status */}
+        {currentVersion && latestVersion && (
+          <div className="text-center mb-6">
+            <div className="inline-flex items-center gap-2 px-4 py-2 bg-white rounded-full shadow-sm border border-gray-100">
+              {needsUpdate ? (
+                <>
+                  <Sparkles className="w-4 h-4 text-purple-500" />
+                  <span className="text-sm text-gray-700">
+                    New version <span className="font-semibold text-purple-600">v{latestVersion.version}</span> available
+                  </span>
+                </>
+              ) : (
+                <>
+                  <CheckCircle className="w-4 h-4 text-green-500" />
+                  <span className="text-sm text-gray-600">You're on the latest version</span>
+                </>
+              )}
+            </div>
           </div>
-          
-          {versions.length === 0 ? (
-            <div className="text-center py-12">
-              <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <Smartphone className="w-8 h-8 text-gray-400" />
-              </div>
-              <p className="text-gray-500 font-medium">No versions available</p>
-              <p className="text-gray-400 text-sm mt-1">Check back later for updates</p>
-            </div>
-          ) : (
-            <div className="divide-y divide-gray-100">
-              {versions.map((version, index) => {
-                const isCurrentVersion = currentVersion === version.version;
-                const isLatest = index === 0 && version.isActive;
-                
-                return (
-                  <div key={version._id} className={`p-6 hover:bg-gray-50 transition ${
-                    isCurrentVersion ? 'bg-green-50' : ''
-                  }`}>
-                    <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-3 mb-2 flex-wrap">
-                          <span className="text-lg font-semibold text-gray-900">v{version.version}</span>
-                          {isLatest && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-green-100 text-green-700 rounded-full text-xs font-medium">
-                              <CheckCircle className="w-3 h-3" />
-                              Latest
-                            </span>
-                          )}
-                          {isCurrentVersion && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-xs font-medium">
-                              <CheckCircle className="w-3 h-3" />
-                              Installed
-                            </span>
-                          )}
-                          {!version.isActive && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-gray-100 text-gray-500 rounded-full text-xs font-medium">
-                              Archived
-                            </span>
-                          )}
-                          {version.isRequired && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-red-100 text-red-700 rounded-full text-xs font-medium">
-                              Required Update
-                            </span>
-                          )}
-                        </div>
-                        {version.releaseNotes && (
-                          <p className="text-gray-600 text-sm mb-2">{version.releaseNotes}</p>
-                        )}
-                        <div className="flex flex-wrap gap-4 text-xs text-gray-400">
-                          <span>Released: {formatDate(version.createdAt)}</span>
-                          <span>Size: {formatFileSize(version.fileSize)}</span>
-                          <span>File: {version.fileName}</span>
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => handleDownload(version)}
-                        disabled={isCurrentVersion}
-                        className={`inline-flex items-center gap-2 px-4 py-2 border rounded-lg transition ${
-                          isCurrentVersion
-                            ? 'border-green-200 text-green-600 bg-green-50 cursor-not-allowed'
-                            : 'border-gray-200 text-gray-700 hover:bg-gray-50'
-                        }`}
-                      >
-                        {isCurrentVersion ? (
-                          <>
-                            <CheckCircle className="w-4 h-4" />
-                            Installed
-                          </>
-                        ) : (
-                          <>
-                            <Download className="w-4 h-4" />
-                            Download
-                          </>
-                        )}
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
+        )}
 
-        {/* Instructions */}
-        <div className="mt-8 bg-gray-50 rounded-2xl p-6 border border-gray-100">
-          <h3 className="text-sm font-semibold text-gray-900 mb-3">How to Install</h3>
-          <div className="grid sm:grid-cols-3 gap-4">
-            <div className="flex items-start gap-3">
-              <div className="w-6 h-6 bg-purple-100 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
+        {/* All Versions Toggle */}
+        {versions.length > 1 && (
+          <button
+            onClick={() => setShowAllVersions(!showAllVersions)}
+            className="w-full flex items-center justify-center gap-2 py-3 text-sm text-gray-500 hover:text-purple-600 transition group"
+          >
+            <span className="font-medium">
+              {showAllVersions ? 'Hide older versions' : 'View all versions'}
+            </span>
+            <ChevronDown className={`w-4 h-4 transition-transform duration-300 ${showAllVersions ? 'rotate-180' : ''}`} />
+          </button>
+        )}
+
+        {/* All Versions List */}
+        {showAllVersions && (
+          <div className="space-y-3 mt-3">
+            {versions.map((version) => {
+              const isLatest = version._id === latestVersion?._id;
+              const isCurrent = currentVersion === version.version;
+              
+              if (isLatest) return null;
+              
+              return (
+                <div 
+                  key={version._id} 
+                  className={`
+                    bg-white rounded-xl shadow-sm border p-4
+                    ${isCurrent ? 'border-purple-200 bg-purple-50/30' : 'border-gray-100'}
+                    transition hover:shadow-md
+                  `}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1 flex-wrap">
+                        <span className="font-semibold text-gray-900">v{version.version}</span>
+                        {isCurrent && (
+                          <span className="px-2 py-0.5 bg-green-100 text-green-700 text-[10px] font-medium rounded-full">
+                            Installed
+                          </span>
+                        )}
+                        {!version.isActive && (
+                          <span className="px-2 py-0.5 bg-gray-100 text-gray-500 text-[10px] font-medium rounded-full">
+                            Archived
+                          </span>
+                        )}
+                        {version.isRequired && (
+                          <span className="px-2 py-0.5 bg-red-100 text-red-700 text-[10px] font-medium rounded-full">
+                            Required
+                          </span>
+                        )}
+                      </div>
+                      {version.releaseNotes && (
+                        <p className="text-sm text-gray-500 line-clamp-1">{version.releaseNotes}</p>
+                      )}
+                      <div className="flex items-center gap-2 text-xs text-gray-400 mt-1">
+                        <span>{formatFileSize(version.fileSize)}</span>
+                        <span>•</span>
+                        <span>{formatDate(version.createdAt)}</span>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => handleDownload(version)}
+                      className={`
+                        flex-shrink-0 ml-3 px-4 py-2 rounded-lg text-sm font-medium transition
+                        ${isCurrent 
+                          ? 'bg-gray-100 text-gray-400 cursor-default' 
+                          : 'bg-purple-50 text-purple-600 hover:bg-purple-100'
+                        }
+                      `}
+                      disabled={isCurrent}
+                    >
+                      {isCurrent ? 'Installed' : 'Download'}
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Install Instructions - Minimal */}
+        <div className="mt-8 bg-white/60 backdrop-blur-sm rounded-xl border border-gray-100/50 p-4">
+          <h4 className="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-2">How to install</h4>
+          <div className="grid grid-cols-3 gap-2">
+            <div className="text-center">
+              <div className="w-8 h-8 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-1">
                 <span className="text-xs font-bold text-purple-600">1</span>
               </div>
-              <p className="text-sm text-gray-600">Download the APK file to your Android device</p>
+              <p className="text-[10px] text-gray-500 leading-tight">Download APK</p>
             </div>
-            <div className="flex items-start gap-3">
-              <div className="w-6 h-6 bg-purple-100 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
+            <div className="text-center">
+              <div className="w-8 h-8 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-1">
                 <span className="text-xs font-bold text-purple-600">2</span>
               </div>
-              <p className="text-sm text-gray-600">Open the file and allow installation from unknown sources if prompted</p>
+              <p className="text-[10px] text-gray-500 leading-tight">Allow install</p>
             </div>
-            <div className="flex items-start gap-3">
-              <div className="w-6 h-6 bg-purple-100 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
+            <div className="text-center">
+              <div className="w-8 h-8 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-1">
                 <span className="text-xs font-bold text-purple-600">3</span>
               </div>
-              <p className="text-sm text-gray-600">Follow the installation wizard and open the app</p>
+              <p className="text-[10px] text-gray-500 leading-tight">Install &amp; open</p>
             </div>
           </div>
         </div>
-
-        {/* Current Version Info with Update Status */}
-        {currentVersion && (
-          <div className="mt-6 text-center">
-            <p className="text-xs text-gray-400">
-              Your current version: <span className="font-medium text-gray-600">v{currentVersion}</span>
-              {latestVersion && currentVersion !== latestVersion.version && (
-                <span className="text-purple-600 ml-2 font-medium">
-                  ⬆ Update available!
-                </span>
-              )}
-              {latestVersion && currentVersion === latestVersion.version && (
-                <span className="text-green-600 ml-2">
-                  ✅ You're on the latest version
-                </span>
-              )}
-            </p>
-            {user?.appVersion && (
-              <p className="text-xs text-gray-400 mt-1">
-                Account version: <span className="font-medium text-gray-600">v{user.appVersion}</span>
-                {user.appVersion !== currentVersion && (
-                  <span className="text-yellow-600 ml-2">
-                    (Sync in progress)
-                  </span>
-                )}
-              </p>
-            )}
-          </div>
-        )}
       </div>
 
-      {/* Download Confirmation Modal */}
+      {/* Download Modal - Dramatic */}
       {showModal && selectedVersion && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl max-w-sm w-full mx-4 shadow-2xl transform transition-all scale-100">
             <div className="p-6">
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-purple-100 rounded-full flex items-center justify-center">
-                    <Download className="w-5 h-5 text-purple-600" />
+                  <div className="w-10 h-10 bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg shadow-purple-200">
+                    <Download className="w-5 h-5 text-white" />
                   </div>
-                  <h2 className="text-xl font-semibold text-gray-900">
-                    {currentVersion && selectedVersion.version !== currentVersion ? 'Update App' : 'Download APK'}
-                  </h2>
+                  <div>
+                    <h3 className="text-lg font-bold text-gray-900">
+                      {currentVersion && selectedVersion.version !== currentVersion ? 'Update App' : 'Download App'}
+                    </h3>
+                    <p className="text-xs text-gray-400">Version {selectedVersion.version}</p>
+                  </div>
                 </div>
                 <button
                   onClick={() => {
@@ -404,75 +399,67 @@ const App = () => {
                       setSelectedVersion(null);
                     }
                   }}
-                  className="text-gray-400 hover:text-gray-600"
+                  className="text-gray-400 hover:text-gray-600 transition"
                 >
                   <XCircle className="w-5 h-5" />
                 </button>
               </div>
 
-              <div className="space-y-4">
-                <div className="p-4 bg-gray-50 rounded-xl">
-                  <p className="text-sm text-gray-600 mb-2">
-                    You are about to {currentVersion && selectedVersion.version !== currentVersion ? 'update to' : 'download'} <span className="font-semibold text-gray-900">Nexa v{selectedVersion.version}</span>
-                  </p>
-                  {currentVersion && selectedVersion.version !== currentVersion && (
-                    <p className="text-xs text-purple-600">
-                      Updating from v{currentVersion} to v{selectedVersion.version}
+              <div className="bg-gradient-to-br from-purple-50 to-purple-100/30 rounded-xl p-4 mb-4">
+                {currentVersion && selectedVersion.version !== currentVersion ? (
+                  <>
+                    <p className="text-sm text-gray-700">
+                      Updating from <span className="font-bold text-gray-900">v{currentVersion}</span>
                     </p>
-                  )}
-                  <div className="flex justify-between text-xs text-gray-500 mt-2">
-                    <span>Size: {formatFileSize(selectedVersion.fileSize)}</span>
-                    <span>Platform: Android</span>
-                  </div>
-                </div>
-
-                <div className="p-3 bg-yellow-50 rounded-lg">
-                  <p className="text-xs text-yellow-700">
-                    <strong>Note:</strong> Make sure you have enabled installation from unknown sources in your device settings.
-                    Go to Settings → Security → Install unknown apps → Allow from this source.
+                    <div className="flex items-center gap-2 mt-1">
+                      <div className="flex-1 h-1.5 bg-purple-200 rounded-full overflow-hidden">
+                        <div className="w-full h-full bg-purple-500 rounded-full animate-pulse" />
+                      </div>
+                      <span className="text-xs font-semibold text-purple-600">v{selectedVersion.version}</span>
+                    </div>
+                  </>
+                ) : (
+                  <p className="text-sm text-gray-700">
+                    Download <span className="font-bold text-gray-900">Nexa v{selectedVersion.version}</span>
                   </p>
+                )}
+                <div className="flex gap-3 text-xs text-gray-400 mt-2 pt-2 border-t border-purple-200/30">
+                  <span>{formatFileSize(selectedVersion.fileSize)}</span>
+                  <span>•</span>
+                  <span>Android APK</span>
                 </div>
+              </div>
 
-                <div className="flex gap-3 pt-2">
-                  <button
-                    onClick={() => {
-                      if (!isDownloading) {
-                        setShowModal(false);
-                        setSelectedVersion(null);
-                      }
-                    }}
-                    disabled={isDownloading}
-                    className={`flex-1 px-4 py-2 border border-gray-200 text-gray-700 rounded-lg transition ${
-                      isDownloading ? 'opacity-50 cursor-not-allowed' : 'hover:bg-gray-50'
-                    }`}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={handleConfirmDownload}
-                    disabled={isDownloading}
-                    className={`flex-1 px-4 py-2 bg-purple-600 text-white rounded-lg transition ${
-                      isDownloading ? 'opacity-75 cursor-not-allowed' : 'hover:bg-purple-700'
-                    } flex items-center justify-center gap-2`}
-                  >
-                    {isDownloading ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        <span>Downloading...</span>
-                      </>
-                    ) : downloadSuccess ? (
-                      <>
-                        <CheckCircle className="w-4 h-4" />
-                        <span>Downloaded!</span>
-                      </>
-                    ) : (
-                      <>
-                        <Download className="w-4 h-4" />
-                        <span>Download</span>
-                      </>
-                    )}
-                  </button>
-                </div>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => {
+                    if (!isDownloading) {
+                      setShowModal(false);
+                      setSelectedVersion(null);
+                    }
+                  }}
+                  disabled={isDownloading}
+                  className="flex-1 px-4 py-2.5 text-sm font-medium text-gray-600 bg-gray-100 rounded-xl hover:bg-gray-200 transition disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleConfirmDownload}
+                  disabled={isDownloading}
+                  className="flex-1 px-4 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-purple-600 to-purple-700 rounded-xl hover:from-purple-700 hover:to-purple-800 transition disabled:opacity-75 flex items-center justify-center gap-2 shadow-lg shadow-purple-200"
+                >
+                  {isDownloading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Downloading...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Download className="w-4 h-4" />
+                      <span>Download</span>
+                    </>
+                  )}
+                </button>
               </div>
             </div>
           </div>
@@ -482,4 +469,4 @@ const App = () => {
   );
 };
 
-export default App; 
+export default App;
