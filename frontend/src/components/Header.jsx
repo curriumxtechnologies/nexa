@@ -1,6 +1,6 @@
 // components/Header.jsx
 import React, { useState, useEffect } from 'react';
-import { Menu, X, Smartphone } from 'lucide-react';
+import { Menu, X } from 'lucide-react';
 
 const Header = () => {
   const [isScrolled, setIsScrolled] = useState(false);
@@ -34,16 +34,12 @@ const Header = () => {
           <div className="px-4 sm:px-6 lg:px-8 py-3">
             <div className="flex items-center justify-between">
               {/* Logo */}
-              <a href="/" className="flex items-center gap-2.5 group">
-                <div className="relative">
-                  <div className="w-10 h-10 bg-gradient-to-br from-purple-600 to-purple-500 rounded-xl flex items-center justify-center shadow-lg shadow-purple-200/50 dark:shadow-purple-900/30 transition-all duration-300 group-hover:shadow-purple-300/60 dark:group-hover:shadow-purple-800/50 group-hover:scale-105">
-                    <Smartphone className="w-5 h-5 text-white" />
-                  </div>
-                  <div className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-green-400 rounded-full border-2 border-white dark:border-gray-900 shadow-sm"></div>
-                </div>
-                <span className="text-xl font-bold text-gray-900 dark:text-white tracking-tight">
-                  Nexa
-                </span>
+              <a href="/" className="flex items-center group">
+                <img 
+                  src="/nexa-logo.png" 
+                  alt="Nexa Logo" 
+                  className="h-8 w-auto object-contain transition-all duration-300 group-hover:scale-105 brightness-0 invert"
+                />
               </a>
 
               {/* Desktop Navigation */}
