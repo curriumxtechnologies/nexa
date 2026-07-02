@@ -6,8 +6,7 @@ import {
   Download, 
   X, 
   AlertCircle,
-  Loader2,
-  CheckCircle
+  Loader2
 } from 'lucide-react';
 
 const AppUpdateChecker = () => {
@@ -17,18 +16,30 @@ const AppUpdateChecker = () => {
   const [isNative, setIsNative] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
   const [versionVerified, setVersionVerified] = useState(false);
-  const [updateFromLogin, setUpdateFromLogin] = useState(null); // Store update info from login
+  const [updateFromLogin, setUpdateFromLogin] = useState(null);
   
-  const { user, token } = useSelector((state) => state.auth);
-  
+  // ✅ All hooks at the top level
+  const { user, token, appUpdate } = useSelector((state) => state.auth);
   const [updateUserVersion] = useUpdateUserAppVersionMutation();
 
-  // 🔄 HYBRID APPROACH - Get device version and verify on startup
+  // ✅ Check for update from login response (using the appUpdate from Redux)
+  useEffect(() => {
+    if (appUpdate?.hasUpdate) {
+      console.log('📱 Update from login response:', appUpdate);
+      setUpdateFromLogin(appUpdate);
+      setIsVisible(true);
+    }
+  }, [appUpdate]);
+
+  // Get device version and verify on startup
   useEffect(() => {
     const getAppVersion = async () => {
       try {
-        if (window.Capacitor?.isNativePlatform()) {
-          setIsNative(true);
+        // Check if we're in a native environment
+        const isNativePlatform = window.Capacitor?.isNativePlatform();
+        setIsNative(!!isNativePlatform);
+        
+        if (isNativePlatform) {
           const { Device } = await import('@capacitor/device');
           const info = await Device.getInfo();
           
@@ -50,7 +61,7 @@ const AppUpdateChecker = () => {
           
           setCurrentVersion(version);
 
-          // 🔄 HYBRID APPROACH: Verify version with backend on app start
+          // Verify version with backend on app start
           if (token && version) {
             try {
               const result = await updateUserVersion({
@@ -61,28 +72,28 @@ const AppUpdateChecker = () => {
               console.log('✅ Version verified on startup:', result);
               setVersionVerified(true);
               
-              // If backend says we need an update, store it
               if (result.data?.needsUpdate) {
                 console.log('📱 Update needed from startup check:', result.data.updateInfo);
                 setUpdateFromLogin({
                   hasUpdate: true,
                   ...result.data.updateInfo
                 });
-                // Show the banner immediately
                 setIsVisible(true);
               }
             } catch (error) {
               console.error('❌ Version verification failed:', error);
-              // Still set verified to true to allow checking
               setVersionVerified(true);
             }
           } else if (!token) {
-            // No token, but we still want to check for updates
             setVersionVerified(true);
           }
+        } else {
+          // Not native - still set as verified so we don't block
+          setVersionVerified(true);
         }
       } catch (error) {
         console.error('Failed to get app version:', error);
+        setVersionVerified(true);
       } finally {
         setIsLoadingVersion(false);
       }
@@ -90,17 +101,6 @@ const AppUpdateChecker = () => {
 
     getAppVersion();
   }, [user?.appVersion, token, updateUserVersion]);
-
-  // Check for app update info from login response (stored in Redux)
-  useEffect(() => {
-    // Check if login response had update info
-    const authState = useSelector((state) => state.auth);
-    if (authState?.appUpdate?.hasUpdate) {
-      console.log('📱 Update from login response:', authState.appUpdate);
-      setUpdateFromLogin(authState.appUpdate);
-      setIsVisible(true);
-    }
-  }, []); // Empty dependency array - runs once after mount
 
   // Query for periodic updates
   const { data, isLoading, error } = useCheckAppUpdateQuery(
@@ -111,7 +111,7 @@ const AppUpdateChecker = () => {
     },
     { 
       skip: !isNative || isLoadingVersion || !versionVerified || !currentVersion,
-      pollingInterval: 3600000, // Check every hour
+      pollingInterval: 3600000,
     }
   );
 
@@ -119,8 +119,9 @@ const AppUpdateChecker = () => {
   useEffect(() => {
     if (data?.data?.hasUpdate && !isLoading && !isLoadingVersion && versionVerified) {
       console.log('📱 Update from API check:', data.data);
-      // Only show if we don't already have an update showing
+      // Only set if we don't already have an update from login
       if (!updateFromLogin?.hasUpdate) {
+        setUpdateFromLogin(data.data);
         setIsVisible(true);
       }
     }
@@ -141,13 +142,9 @@ const AppUpdateChecker = () => {
     setIsDownloading(true);
 
     try {
-      // Get download URL with token if available
       const downloadUrl = getAppDownloadUrl(updateInfo._id, token);
-      
-      // Open download in system browser
       window.open(downloadUrl, '_system');
 
-      // Update user's app version in database if token exists
       if (token && user?.id) {
         try {
           await updateUserVersion({
@@ -160,10 +157,8 @@ const AppUpdateChecker = () => {
         }
       }
 
-      // Store version in localStorage as backup
       localStorage.setItem('appVersion', updateInfo.version);
 
-      // For optional updates, hide after download starts
       if (!updateInfo?.isRequired) {
         setIsVisible(false);
       }
@@ -277,7 +272,7 @@ const AppUpdateChecker = () => {
         </div>
       </div>
 
-      {/* Mobile Banner - Bottom Sheet Style */}
+      {/* Mobile Banner */}
       <div className="md:hidden fixed bottom-0 left-0 right-0 z-50 animate-in slide-in-from-bottom-5 duration-300">
         <div className={`rounded-t-2xl shadow-2xl border-t ${
           isRequired 
@@ -346,7 +341,7 @@ const AppUpdateChecker = () => {
         </div>
       </div>
 
-      {/* Required Update Overlay (blocks app usage) */}
+      {/* Required Update Overlay */}
       {isRequired && isVisible && (
         <div className="fixed inset-0 bg-black bg-opacity-50 z-40" />
       )}
