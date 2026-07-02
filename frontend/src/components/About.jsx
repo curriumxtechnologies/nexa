@@ -12,30 +12,33 @@ import {
   Star,
   Mail,
   Sparkles,
-  Rocket
+  Rocket,
+  Building2,
+  Briefcase,
+  Crown
 } from 'lucide-react';
 
 const About = () => {
   const teamMembers = [
     {
-      name: 'Samuel Njoku',
-      role: 'Founder & CEO',
-      description: 'Building the future of email communication',
+      name: 'Embee Sunday',
+      role: 'Director, Lovoh Create',
+      description: 'Visionary leadership & brand strategy',
       image: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=200&h=200&fit=crop',
       color: 'purple'
     },
     {
-      name: 'CurriumX Team',
-      role: 'Innovation Lab',
-      description: 'Bringing cutting-edge solutions to life',
-      image: 'https://images.unsplash.com/photo-1522071820081-009f0129c71c?w=200&h=200&fit=crop',
+      name: 'Njoku Samuel',
+      role: 'Systems Manager, Nexa',
+      description: 'Technical architecture & system design',
+      image: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200&h=200&fit=crop',
       color: 'blue'
     },
     {
-      name: 'LovohCreate',
-      role: 'Design & Development Partner',
-      description: 'Creating beautiful user experiences',
-      image: 'https://images.unsplash.com/photo-1522071901873-411886a10004?w=200&h=200&fit=crop',
+      name: 'Lovoh Create',
+      role: 'Parent Company',
+      description: 'Innovation & Design Hub',
+      image: 'https://images.unsplash.com/photo-1522071820081-009f0129c71c?w=200&h=200&fit=crop',
       color: 'pink'
     }
   ];
@@ -119,21 +122,42 @@ const About = () => {
               Start with our free tier today — no credit card required. We're committed to keeping 
               essential features accessible while sustainably growing the platform.
             </p>
+            
+            {/* Company Structure */}
+            <div className="bg-gray-50 rounded-xl p-4 mb-6">
+              <div className="flex items-center gap-2 mb-3">
+                <Building2 className="w-4 h-4 text-purple-600" />
+                <span className="text-sm font-semibold text-gray-700">Company</span>
+              </div>
+              <div className="space-y-2 text-sm">
+                <div className="flex items-center gap-2">
+                  <Crown className="w-3.5 h-3.5 text-purple-500" />
+                  <span className="text-gray-600">Parent Company:</span>
+                  <span className="font-medium text-gray-800">Lovoh Create</span>
+                </div>
+                <div className="flex items-center gap-2 pl-5">
+                  <span className="text-gray-600">—</span>
+                  <span className="text-gray-600">Nexa is a product of</span>
+                  <span className="font-medium text-gray-800">Lovoh Create</span>
+                </div>
+              </div>
+            </div>
+
             <div className="flex items-center gap-4 pt-4 border-t border-gray-100">
               <div className="flex -space-x-2">
                 <div className="w-10 h-10 bg-purple-100 rounded-full border-2 border-white flex items-center justify-center">
-                  <span className="text-xs font-bold text-purple-600">SN</span>
+                  <span className="text-xs font-bold text-purple-600">ES</span>
                 </div>
                 <div className="w-10 h-10 bg-blue-100 rounded-full border-2 border-white flex items-center justify-center">
-                  <span className="text-xs font-bold text-blue-600">CX</span>
+                  <span className="text-xs font-bold text-blue-600">NS</span>
                 </div>
                 <div className="w-10 h-10 bg-pink-100 rounded-full border-2 border-white flex items-center justify-center">
                   <span className="text-xs font-bold text-pink-600">LC</span>
                 </div>
               </div>
               <div>
-                <p className="text-sm font-medium text-gray-900">Powered by CurriumX</p>
-                <p className="text-xs text-gray-500">In partnership with LovohCreate</p>
+                <p className="text-sm font-medium text-gray-900">Lovoh Create</p>
+                <p className="text-xs text-gray-500">Innovation & Design Hub</p>
               </div>
             </div>
           </div>
@@ -214,7 +238,7 @@ const About = () => {
                 <Rocket className="w-6 h-6 text-purple-600" />
               </div>
               <p className="text-2xl font-bold text-gray-900">Launched</p>
-              <p className="text-sm text-gray-500">2024</p>
+              <p className="text-sm text-gray-500">2026</p>
             </div>
             <div>
               <div className="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-3">
@@ -241,7 +265,8 @@ const About = () => {
             Start free today — no strings attached. As we grow, we'll always keep 
             essential features accessible to everyone."
           </p>
-          <p className="font-semibold text-gray-900">— Samuel Njoku, Founder</p>
+          <p className="font-semibold text-gray-900">— Embee Sunday, Director of Lovoh Create</p>
+          <p className="text-sm text-gray-500 mt-1">Systems Management by Njoku Samuel</p>
           <div className="flex items-center justify-center gap-1 mt-4">
             <Star className="w-4 h-4 text-yellow-400 fill-yellow-400" />
             <Star className="w-4 h-4 text-yellow-400 fill-yellow-400" />
@@ -249,6 +274,17 @@ const About = () => {
             <Star className="w-4 h-4 text-yellow-400 fill-yellow-400" />
             <Star className="w-4 h-4 text-yellow-400 fill-yellow-400" />
           </div>
+        </div>
+
+        {/* Footer */}
+        <div className="mt-16 text-center border-t border-gray-100 pt-8">
+          <p className="text-sm text-gray-500">
+            <span className="font-medium text-gray-700">Nexa</span> is a product of{' '}
+            <span className="font-medium text-purple-600">Lovoh Create</span>
+          </p>
+          <p className="text-xs text-gray-400 mt-1">
+            Built with ❤️ by Njoku Samuel
+          </p>
         </div>
       </div>
 

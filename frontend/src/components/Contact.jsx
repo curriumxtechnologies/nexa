@@ -20,9 +20,9 @@ const Contact = () => {
     {
       icon: Mail,
       title: 'Email Support',
-      value: 'support@curriumx.online',
+      value: 'support@lovohcreate.com',
       description: 'We respond within 24 hours',
-      action: 'mailto:support@curriumx.online',
+      action: 'mailto:support@lovohcreate.com',
       color: 'purple'
     },
     {
@@ -188,7 +188,7 @@ const Contact = () => {
         <div className="text-center">
           <div className="inline-flex flex-col sm:flex-row items-center gap-3 border border-white/5 rounded-2xl p-2 bg-white/5">
             <a
-              href="mailto:support@curriumx.online"
+              href="mailto:support@lovohcreate.com"
               className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-3 bg-purple-500 text-white rounded-xl hover:bg-purple-600 transition text-sm font-light tracking-wider"
             >
               <Send className="w-4 h-4" />
@@ -210,7 +210,7 @@ const Contact = () => {
         <div className="mt-8 text-center">
           <div className="flex items-center justify-center gap-2 text-[10px] text-gray-600 font-light">
             <Heart className="w-3 h-3 text-purple-400" />
-            <span>CurriumX Innovation Lab</span>
+            <span>Lovoh Create</span>
           </div>
         </div>
       </div>

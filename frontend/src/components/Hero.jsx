@@ -105,14 +105,21 @@ const Hero = () => {
               ))}
             </div>
 
-            {/* Trust indicators */}
+            {/* Trust indicators - Removed fake numbers */}
             <div className="flex items-center gap-4 pt-2">
               <div className="flex -space-x-2">
-                {[1,2,3,4].map((i) => (
-                  <div key={i} className="w-7 h-7 rounded-full border-2 border-gray-900 bg-gradient-to-br from-purple-500/30 to-purple-600/30 flex items-center justify-center">
-                    <span className="text-[10px] text-white font-medium">●</span>
-                  </div>
-                ))}
+                <div className="w-7 h-7 rounded-full border-2 border-gray-900 bg-gradient-to-br from-purple-500/30 to-purple-600/30 flex items-center justify-center">
+                  <span className="text-[10px] text-white font-medium">●</span>
+                </div>
+                <div className="w-7 h-7 rounded-full border-2 border-gray-900 bg-gradient-to-br from-purple-500/30 to-purple-600/30 flex items-center justify-center">
+                  <span className="text-[10px] text-white font-medium">●</span>
+                </div>
+                <div className="w-7 h-7 rounded-full border-2 border-gray-900 bg-gradient-to-br from-purple-500/30 to-purple-600/30 flex items-center justify-center">
+                  <span className="text-[10px] text-white font-medium">●</span>
+                </div>
+                <div className="w-7 h-7 rounded-full border-2 border-gray-900 bg-gradient-to-br from-purple-500/30 to-purple-600/30 flex items-center justify-center">
+                  <span className="text-[10px] text-white font-medium">●</span>
+                </div>
               </div>
               <div className="flex items-center gap-1.5">
                 <Star className="w-3.5 h-3.5 text-yellow-400 fill-yellow-400" />
@@ -121,7 +128,7 @@ const Hero = () => {
                 </span>
               </div>
               <span className="text-xs text-gray-500">•</span>
-              <span className="text-xs text-gray-400">Trusted by 2k+ users</span>
+              <span className="text-xs text-gray-400">Free to start</span>
             </div>
           </div>
 
