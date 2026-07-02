@@ -13,10 +13,12 @@ import {
   CheckCircle,
   ChevronDown,
   CornerDownLeft,
-  Tag
+  Tag,
+  PlusCircle,
+  AlertTriangle
 } from 'lucide-react';
 
-// ─── Defined OUTSIDE the parent so React never remounts it ───────────────────
+// ─── RecipientInput Component ───────────────────────────────────────────────
 const RecipientInput = ({
   label,
   emails,
@@ -33,15 +35,15 @@ const RecipientInput = ({
 
   return (
     <div>
-      <label className="block text-xs font-medium text-gray-500 mb-1">{label}</label>
+      <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">{label}</label>
       <div
-        className="flex flex-wrap items-center gap-2 p-2 bg-gray-50 border border-gray-200 rounded-lg focus-within:ring-2 focus-within:ring-purple-400 focus-within:border-transparent cursor-text"
+        className="flex flex-wrap items-center gap-2 p-2 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus-within:ring-2 focus-within:ring-purple-400 focus-within:border-transparent cursor-text"
         onClick={() => inputRef?.current?.focus()}
       >
         {emails.map((email, idx) => (
           <div
             key={idx}
-            className="flex items-center gap-1 px-2 py-1 bg-purple-100 text-purple-700 rounded-full text-sm"
+            className="flex items-center gap-1 px-2 py-1 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 rounded-full text-sm"
           >
             <span className="max-w-[150px] truncate">{email}</span>
             <button
@@ -50,7 +52,7 @@ const RecipientInput = ({
                 e.stopPropagation();
                 onRemove(email);
               }}
-              className="hover:bg-purple-200 rounded-full p-0.5"
+              className="hover:bg-purple-200 dark:hover:bg-purple-800 rounded-full p-0.5"
             >
               <X className="w-3 h-3" />
             </button>
@@ -63,11 +65,11 @@ const RecipientInput = ({
           onChange={onInputChange}
           onKeyDown={onKeyDown}
           placeholder={emails.length === 0 ? placeholder : ''}
-          className="flex-1 min-w-[120px] bg-transparent outline-none text-sm py-1"
+          className="flex-1 min-w-[120px] bg-transparent outline-none text-sm py-1 dark:text-white"
         />
       </div>
       {hint && (
-        <div className="flex items-center gap-2 mt-1 text-xs text-gray-400">
+        <div className="flex items-center gap-2 mt-1 text-xs text-gray-400 dark:text-gray-500">
           <CornerDownLeft className="w-3 h-3" />
           <span>{hint}</span>
           <span className="mx-1">•</span>
@@ -78,8 +80,26 @@ const RecipientInput = ({
     </div>
   );
 };
-// ─────────────────────────────────────────────────────────────────────────────
 
+// ─── No Custom Emails Warning ──────────────────────────────────────────────
+const NoCustomEmailsWarning = ({ onNavigate }) => (
+  <div className="p-6 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-xl text-center">
+    <AlertTriangle className="w-12 h-12 text-yellow-500 dark:text-yellow-400 mx-auto mb-3" />
+    <h3 className="text-lg font-semibold text-gray-800 dark:text-white mb-2">No Email Domain Found</h3>
+    <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">
+      You need to add a custom email domain before you can send emails.
+    </p>
+    <button
+      onClick={onNavigate}
+      className="inline-flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition"
+    >
+      <PlusCircle className="w-4 h-4" />
+      Add Email Domain
+    </button>
+  </div>
+);
+
+// ─── Main Compose Component ─────────────────────────────────────────────────
 const Compose = ({ 
   initialTo = '', 
   initialCc = '', 
@@ -95,7 +115,7 @@ const Compose = ({
   const [showDropdown, setShowDropdown] = useState(false);
 
   const [sendEmail, { isLoading }] = useSendEmailMutation();
-  const { data: customEmailsData } = useGetCustomEmailsQuery();
+  const { data: customEmailsData, isLoading: isLoadingEmails } = useGetCustomEmailsQuery();
 
   const customEmails = customEmailsData?.data?.emails || [];
   const defaultEmail = customEmails.find((e) => e.isDefault) || customEmails[0];
@@ -147,12 +167,14 @@ const Compose = ({
     }
   }, [initialTo, initialCc, initialSubject, initialContent]);
 
+  // ── Set default custom email ──────────────────────────────────────────────
   useEffect(() => {
     if (defaultEmail && !emailData.customEmailId) {
       setEmailData((prev) => ({ ...prev, customEmailId: defaultEmail._id }));
     }
   }, [defaultEmail]);
 
+  // ── Click outside dropdown ────────────────────────────────────────────────
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
@@ -222,7 +244,6 @@ const Compose = ({
   const handleToRemove = (email) => {
     setToEmails((prev) => prev.filter((e) => e !== email));
   };
-  // ──────────────────────────────────────────────────────────────────────────
 
   // ── CC handlers ────────────────────────────────────────────────────────────
   const handleCcInputChange = (e) => {
@@ -248,7 +269,6 @@ const Compose = ({
   };
 
   const handleCcRemove = (email) => setCcEmails((prev) => prev.filter((e) => e !== email));
-  // ──────────────────────────────────────────────────────────────────────────
 
   // ── BCC handlers ───────────────────────────────────────────────────────────
   const handleBccInputChange = (e) => {
@@ -274,7 +294,6 @@ const Compose = ({
   };
 
   const handleBccRemove = (email) => setBccEmails((prev) => prev.filter((e) => e !== email));
-  // ──────────────────────────────────────────────────────────────────────────
 
   const handleSubjectChange = useCallback((e) => {
     setEmailData((prev) => ({ ...prev, subject: e.target.value }));
@@ -312,6 +331,12 @@ const Compose = ({
     setError('');
     setSuccess('');
 
+    // ✅ Check if user has custom emails before sending
+    if (customEmails.length === 0) {
+      setError('Please add a custom email domain first. Click "Add Email Domain" below.');
+      return;
+    }
+
     if (toEmails.length === 0) return setError('Please enter at least one recipient');
     if (!emailData.subject) return setError('Please enter a subject');
     if (!emailData.content) return setError('Please enter email content');
@@ -329,7 +354,6 @@ const Compose = ({
       await sendEmail(formData).unwrap();
       setSuccess('Email sent successfully!');
       
-      // If onClose is provided (reply/forward mode), close after sending
       if (onClose) {
         setTimeout(() => onClose(), 1500);
       } else {
@@ -365,28 +389,54 @@ const Compose = ({
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
-  // ── Sub-components ─────────────────────────────────────────────────────────
+  const navigateToDomains = () => {
+    navigate('/domains');
+  };
 
+  // ── If loading ─────────────────────────────────────────────────────────────
+  if (isLoadingEmails) {
+    return (
+      <div className="flex items-center justify-center h-full min-h-[300px]">
+        <div className="text-center">
+          <Loader2 className="w-8 h-8 text-purple-600 animate-spin mx-auto mb-3" />
+          <p className="text-sm text-gray-400">Loading your email domains...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // ── If NO custom emails ──────────────────────────────────────────────────
+  if (customEmails.length === 0) {
+    return (
+      <div className="flex items-center justify-center h-full min-h-[400px] p-6">
+        <div className="max-w-md w-full">
+          <NoCustomEmailsWarning onNavigate={navigateToDomains} />
+        </div>
+      </div>
+    );
+  }
+
+  // ── Attachment List ──────────────────────────────────────────────────────
   const AttachmentList = () =>
     attachments.length > 0 ? (
       <div className="space-y-2">
-        <p className="text-xs font-medium text-gray-500">Attachments ({attachments.length})</p>
+        <p className="text-xs font-medium text-gray-500 dark:text-gray-400">Attachments ({attachments.length})</p>
         <div className="flex flex-wrap gap-2">
           {attachments.map((att, index) => (
-            <div key={index} className="flex items-center space-x-2 bg-gray-100 rounded-lg px-2 py-1">
+            <div key={index} className="flex items-center space-x-2 bg-gray-100 dark:bg-gray-800 rounded-lg px-2 py-1">
               {att.preview ? (
                 <img src={att.preview} alt={att.name} className="w-8 h-8 object-cover rounded" />
               ) : (
                 <Paperclip className="w-4 h-4 text-gray-400" />
               )}
               <div className="min-w-0">
-                <p className="text-xs text-gray-700 max-w-[150px] truncate">{att.name}</p>
+                <p className="text-xs text-gray-700 dark:text-gray-300 max-w-[150px] truncate">{att.name}</p>
                 <p className="text-[10px] text-gray-400">{formatFileSize(att.size)}</p>
               </div>
               <button
                 type="button"
                 onClick={() => removeAttachment(index)}
-                className="p-1 hover:bg-gray-200 rounded flex-shrink-0"
+                className="p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded flex-shrink-0"
               >
                 <X className="w-3 h-3 text-gray-400" />
               </button>
@@ -396,13 +446,14 @@ const Compose = ({
       </div>
     ) : null;
 
+  // ── From Dropdown ──────────────────────────────────────────────────────
   const FromDropdown = ({ isMobile }) => (
     <div className="relative" ref={dropdownRef}>
-      <label className="text-xs font-medium text-gray-500 mb-1 block">From</label>
+      <label className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 block">From</label>
       <button
         type="button"
         onClick={() => setShowDropdown((prev) => !prev)}
-        className="w-full flex items-center justify-between px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg hover:border-purple-300 transition text-sm"
+        className="w-full flex items-center justify-between px-3 py-2 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg hover:border-purple-300 dark:hover:border-purple-700 transition text-sm"
       >
         <div className="flex items-center space-x-2 min-w-0">
           {selectedEmail?.profilePicture?.url ? (
@@ -413,18 +464,18 @@ const Compose = ({
             />
           ) : (
             <div
-              className={`${isMobile ? 'w-5 h-5' : 'w-6 h-6'} bg-purple-100 rounded-full flex items-center justify-center flex-shrink-0`}
+              className={`${isMobile ? 'w-5 h-5' : 'w-6 h-6'} bg-purple-100 dark:bg-purple-900/30 rounded-full flex items-center justify-center flex-shrink-0`}
             >
-              <span className="text-xs text-purple-600 font-medium">
+              <span className="text-xs text-purple-600 dark:text-purple-400 font-medium">
                 {(selectedEmail?.displayName?.[0] || selectedEmail?.username?.[0] || 'U').toUpperCase()}
               </span>
             </div>
           )}
           <div className="text-left min-w-0">
-            <p className="text-gray-800 text-sm font-medium truncate">
+            <p className="text-gray-800 dark:text-white text-sm font-medium truncate">
               {selectedEmail?.displayName || selectedEmail?.username}
             </p>
-            {!isMobile && <p className="text-gray-400 text-xs truncate">{selectedEmail?.email}</p>}
+            {!isMobile && <p className="text-gray-400 dark:text-gray-500 text-xs truncate">{selectedEmail?.email}</p>}
           </div>
         </div>
         <ChevronDown
@@ -433,7 +484,7 @@ const Compose = ({
       </button>
 
       {showDropdown && (
-        <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-30 max-h-60 overflow-y-auto">
+        <div className="absolute top-full left-0 right-0 mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-30 max-h-60 overflow-y-auto">
           {customEmails.map((email) => (
             <button
               key={email._id}
@@ -442,22 +493,22 @@ const Compose = ({
                 e.preventDefault();
                 selectCustomEmail(email._id);
               }}
-              className={`w-full flex items-center space-x-3 px-3 py-2 hover:bg-gray-50 transition text-sm ${
-                emailData.customEmailId === email._id ? 'bg-purple-50' : ''
+              className={`w-full flex items-center space-x-3 px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-700 transition text-sm ${
+                emailData.customEmailId === email._id ? 'bg-purple-50 dark:bg-purple-900/20' : ''
               }`}
             >
               {email.profilePicture?.url ? (
                 <img src={email.profilePicture.url} className="w-7 h-7 rounded-full flex-shrink-0" alt="" />
               ) : (
-                <div className="w-7 h-7 bg-purple-100 rounded-full flex items-center justify-center flex-shrink-0">
-                  <span className="text-xs text-purple-600 font-medium">
+                <div className="w-7 h-7 bg-purple-100 dark:bg-purple-900/30 rounded-full flex items-center justify-center flex-shrink-0">
+                  <span className="text-xs text-purple-600 dark:text-purple-400 font-medium">
                     {(email.displayName?.[0] || email.username?.[0] || 'U').toUpperCase()}
                   </span>
                 </div>
               )}
               <div className="flex-1 text-left min-w-0">
-                <p className="text-gray-800 font-medium truncate">{email.displayName || email.username}</p>
-                <p className="text-gray-400 text-xs truncate">{email.email}</p>
+                <p className="text-gray-800 dark:text-white font-medium truncate">{email.displayName || email.username}</p>
+                <p className="text-gray-400 dark:text-gray-500 text-xs truncate">{email.email}</p>
               </div>
             </button>
           ))}
@@ -468,7 +519,7 @@ const Compose = ({
 
   if (isMinimized) {
     return (
-      <div className="fixed bottom-4 right-4 bg-white rounded-lg shadow-lg border border-gray-200 w-72 z-50">
+      <div className="fixed bottom-4 right-4 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 w-72 z-50">
         <div
           className="flex items-center justify-between px-3 py-2 bg-purple-600 text-white rounded-t-lg cursor-pointer"
           onClick={() => setIsMinimized(false)}
@@ -480,17 +531,17 @@ const Compose = ({
           <Maximize2 className="w-4 h-4" />
         </div>
         <div className="p-2">
-          <p className="text-xs text-gray-500 truncate">
+          <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
             To: {toEmails[0] || '...'}
             {toEmails.length > 1 ? ` +${toEmails.length - 1}` : ''}
           </p>
-          <p className="text-xs text-gray-500 truncate">Subject: {emailData.subject || 'No subject'}</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400 truncate">Subject: {emailData.subject || 'No subject'}</p>
         </div>
       </div>
     );
   }
 
-  // ── Shared form fields ─────────────────────────────────────────────────────
+  // ── Shared form fields ──────────────────────────────────────────────────
   const formFields = (isMobile) => (
     <>
       <FromDropdown isMobile={isMobile} />
@@ -511,14 +562,14 @@ const Compose = ({
         <button
           type="button"
           onClick={() => setShowCc((v) => !v)}
-          className="text-xs text-purple-600 hover:text-purple-700"
+          className="text-xs text-purple-600 dark:text-purple-400 hover:text-purple-700 dark:hover:text-purple-300"
         >
           {showCc ? 'Hide CC' : 'Add CC'}
         </button>
         <button
           type="button"
           onClick={() => setShowBcc((v) => !v)}
-          className="text-xs text-purple-600 hover:text-purple-700"
+          className="text-xs text-purple-600 dark:text-purple-400 hover:text-purple-700 dark:hover:text-purple-300"
         >
           {showBcc ? 'Hide BCC' : 'Add BCC'}
         </button>
@@ -549,20 +600,20 @@ const Compose = ({
       />
 
       <div>
-        <label className="block text-xs font-medium text-gray-500 mb-1">Subject</label>
+        <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Subject</label>
         <input
           type="text"
           value={emailData.subject}
           onChange={handleSubjectChange}
           placeholder="Enter subject"
-          className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-400 focus:border-transparent outline-none text-sm"
+          className="w-full px-3 py-2 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-purple-400 focus:border-transparent outline-none text-sm dark:text-white"
         />
       </div>
 
       <button
         type="button"
         onClick={() => fileInputRef.current?.click()}
-        className="flex items-center space-x-1 px-3 py-1.5 text-gray-600 hover:bg-gray-100 rounded-lg transition text-sm w-fit"
+        className="flex items-center space-x-1 px-3 py-1.5 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition text-sm w-fit"
       >
         <Paperclip className="w-4 h-4" />
         <span>Attach Files</span>
@@ -573,7 +624,7 @@ const Compose = ({
         value={emailData.content}
         onChange={handleContentChange}
         placeholder="Write your message here..."
-        className={`w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-400 focus:border-transparent outline-none text-sm resize-none ${
+        className={`w-full px-3 py-2 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-purple-400 focus:border-transparent outline-none text-sm resize-none dark:text-white ${
           isMobile ? 'min-h-[200px]' : 'h-64'
         }`}
       />
@@ -581,26 +632,25 @@ const Compose = ({
       <AttachmentList />
 
       {error && (
-        <div className="flex items-center space-x-2 p-3 bg-red-50 rounded-lg">
+        <div className="flex items-center space-x-2 p-3 bg-red-50 dark:bg-red-900/20 rounded-lg">
           <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0" />
-          <p className="text-sm text-red-600">{error}</p>
+          <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
         </div>
       )}
       {success && (
-        <div className="flex items-center space-x-2 p-3 bg-green-50 rounded-lg">
+        <div className="flex items-center space-x-2 p-3 bg-green-50 dark:bg-green-900/20 rounded-lg">
           <CheckCircle className="w-4 h-4 text-green-500 flex-shrink-0" />
-          <p className="text-sm text-green-600">{success}</p>
+          <p className="text-sm text-green-600 dark:text-green-400">{success}</p>
         </div>
       )}
 
       <input type="file" ref={fileInputRef} onChange={handleFileSelect} multiple className="hidden" />
     </>
   );
-  // ──────────────────────────────────────────────────────────────────────────
 
-  // MOBILE VIEW
+  // ── MOBILE VIEW ──────────────────────────────────────────────────────────
   const mobileView = (
-    <div className="fixed inset-0 bg-white z-50 flex flex-col">
+    <div className="fixed inset-0 bg-white dark:bg-gray-900 z-50 flex flex-col">
       <div className="flex items-center justify-between px-4 py-3 bg-purple-600 text-white sticky top-0 z-10">
         <div className="flex items-center space-x-2">
           <Send className="w-5 h-5" />
@@ -613,11 +663,11 @@ const Compose = ({
 
       <form onSubmit={handleSubmit} className="flex-1 flex flex-col overflow-hidden">
         <div className="flex-1 overflow-y-auto p-4 space-y-4 pb-24">{formFields(true)}</div>
-        <div className="flex items-center justify-between px-4 py-3 bg-white border-t border-gray-100 sticky bottom-0">
+        <div className="flex items-center justify-between px-4 py-3 bg-white dark:bg-gray-800 border-t border-gray-100 dark:border-gray-700 sticky bottom-0">
           <button
             type="button"
             onClick={handleDiscard}
-            className="px-3 py-2 text-sm text-red-600 hover:bg-red-50 rounded-lg transition"
+            className="px-3 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition"
           >
             Discard
           </button>
@@ -634,19 +684,19 @@ const Compose = ({
     </div>
   );
 
-  // DESKTOP VIEW
+  // ── DESKTOP VIEW ──────────────────────────────────────────────────────────
   const desktopView = (
     <div
-      className={`fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center ${
+      className={`fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center ${
         isFullscreen ? 'p-0' : 'p-4'
       }`}
     >
       <div
-        className={`bg-white rounded-xl shadow-2xl flex flex-col ${
+        className={`bg-white dark:bg-gray-800 rounded-xl shadow-2xl flex flex-col ${
           isFullscreen ? 'w-full h-full rounded-none' : 'w-full max-w-3xl h-[85vh]'
         }`}
       >
-        <div className="flex items-center justify-between px-5 py-3 bg-purple-600 text-white rounded-t-xl">
+        <div className="flex items-center justify-between px-5 py-3 bg-purple-600 text-white rounded-t-xl flex-shrink-0">
           <div className="flex items-center space-x-2">
             <Send className="w-5 h-5" />
             <h2 className="text-base font-semibold">{isReply ? 'Reply' : 'New Message'}</h2>
@@ -682,9 +732,11 @@ const Compose = ({
         </div>
 
         <form onSubmit={handleSubmit} className="flex-1 flex flex-col overflow-hidden">
-          <div className="flex-1 overflow-y-auto p-5 space-y-4">{formFields(false)}</div>
-          <div className="flex items-center justify-between px-5 py-3 bg-gray-50 border-t border-gray-200 rounded-b-xl">
-            <div className="flex items-center space-x-3 text-xs text-gray-400">
+          <div className="flex-1 overflow-y-auto p-5 space-y-4">
+            {formFields(false)}
+          </div>
+          <div className="flex items-center justify-between px-5 py-3 bg-gray-50 dark:bg-gray-900/50 border-t border-gray-200 dark:border-gray-700 rounded-b-xl flex-shrink-0">
+            <div className="flex items-center space-x-3 text-xs text-gray-400 dark:text-gray-500">
               <div className="flex items-center gap-1">
                 <CornerDownLeft className="w-3 h-3" />
                 <span>Enter</span>
@@ -699,7 +751,7 @@ const Compose = ({
               <button
                 type="button"
                 onClick={handleDiscard}
-                className="px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 rounded-lg transition"
+                className="px-3 py-1.5 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition"
               >
                 Discard
               </button>

@@ -1,3 +1,4 @@
+// main.jsx
 import React, { StrictMode, useEffect } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
@@ -40,6 +41,9 @@ import AdminAdmins from "./screens/AdminAdmins.jsx";
 
 import { useMobilePushNotifications } from './hooks/useMobilePushNotifications';
 import AppUpdateChecker from './components/AppUpdateChecker.jsx';
+
+// ✅ Import ThemeProvider
+import { ThemeProvider } from './contexts/ThemeContext.jsx';
 
 // Component to handle push notification initialization
 const PushNotificationInitializer = () => {
@@ -97,7 +101,7 @@ const router = createBrowserRouter([
       { path: "register", element: <Register /> },
       { path: "verify-email", element: <VerifyEmail /> },
       { path: "accept-invitation/:token", element: <AcceptInvite /> },
-      {path: "app/download/:versionId", element: <AppDownload />},
+      { path: "app/download/:versionId", element: <AppDownload /> },
       // Protected routes wrapped with PrivateRoute
       {
         element: <PrivateRoute />,
@@ -152,15 +156,17 @@ if (window.Capacitor?.isNativePlatform()) {
   console.log('📱 Running on Capacitor - using native push notifications');
 }
 
-// Root component with push notification initializer and app update checker
+// ✅ Root component with ThemeProvider, Redux, and app features
 const Root = () => {
   return (
     <Provider store={store}>
-      <StrictMode>
-        <PushNotificationInitializer />
-        <RouterProvider router={router} />
-        <AppUpdateChecker />
-      </StrictMode>
+      <ThemeProvider>
+        <StrictMode>
+          <PushNotificationInitializer />
+          <RouterProvider router={router} />
+          <AppUpdateChecker />
+        </StrictMode>
+      </ThemeProvider>
     </Provider>
   );
 };

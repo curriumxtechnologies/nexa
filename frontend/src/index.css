@@ -1,37 +1,138 @@
+/* ============================================ */
+/* 1. TAILWIND IMPORT */
+/* ============================================ */
 @import "tailwindcss";
 
-/* Fix input text color */
+/* ============================================ */
+/* 2. CSS VARIABLES (THEME) */
+/* ============================================ */
+@layer base {
+  /* Light theme (default) */
+  :root {
+    --bg-primary: #ffffff;
+    --bg-secondary: #f9fafb;
+    --bg-tertiary: #f3f4f6;
+    --text-primary: #111827;
+    --text-secondary: #4b5563;
+    --text-tertiary: #9ca3af;
+    --border-color: #e5e7eb;
+    --shadow-color: rgba(0, 0, 0, 0.1);
+    --card-bg: #ffffff;
+    --input-bg: #ffffff;
+    --hover-bg: #f3f4f6;
+    --input-text: #1a1a1a;
+  }
+
+  /* Dark theme */
+  .dark {
+    --bg-primary: #0a0a0a;
+    --bg-secondary: #1a1a1a;
+    --bg-tertiary: #2a2a2a;
+    --text-primary: #f9fafb;
+    --text-secondary: #d1d5db;
+    --text-tertiary: #9ca3af;
+    --border-color: #374151;
+    --shadow-color: rgba(0, 0, 0, 0.4);
+    --card-bg: #1a1a1a;
+    --input-bg: #2a2a2a;
+    --hover-bg: #2a2a2a;
+    --input-text: #f3f4f6;
+  }
+}
+
+/* ============================================ */
+/* 3. MAP EXISTING TAILWIND CLASSES TO VARIABLES */
+/* ============================================ */
+@layer utilities {
+  /* --- Backgrounds --- */
+  .bg-white {
+    background-color: var(--bg-primary) !important;
+  }
+  .bg-gray-50 {
+    background-color: var(--bg-secondary) !important;
+  }
+  .bg-gray-100 {
+    background-color: var(--bg-tertiary) !important;
+  }
+  .bg-gray-200 {
+    background-color: var(--bg-tertiary) !important;
+  }
+
+  /* --- Text Colors --- */
+  .text-gray-900 {
+    color: var(--text-primary) !important;
+  }
+  .text-gray-800 {
+    color: var(--text-primary) !important;
+  }
+  .text-gray-700 {
+    color: var(--text-secondary) !important;
+  }
+  .text-gray-600 {
+    color: var(--text-secondary) !important;
+  }
+  .text-gray-500 {
+    color: var(--text-tertiary) !important;
+  }
+  .text-gray-400 {
+    color: var(--text-tertiary) !important;
+  }
+
+  /* --- Border Colors --- */
+  .border-gray-100 {
+    border-color: var(--border-color) !important;
+  }
+  .border-gray-200 {
+    border-color: var(--border-color) !important;
+  }
+  .border-gray-300 {
+    border-color: var(--border-color) !important;
+  }
+
+  /* --- Cards & Inputs --- */
+  .bg-card {
+    background-color: var(--card-bg);
+  }
+  .bg-input {
+    background-color: var(--input-bg);
+  }
+  .hover-bg {
+    background-color: var(--hover-bg);
+  }
+}
+
+/* ============================================ */
+/* 4. BODY */
+/* ============================================ */
+body {
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* ============================================ */
+/* 5. INPUT STYLES */
+/* ============================================ */
 input,
 textarea,
 select,
 [contenteditable] {
-  color: #1a1a1a !important;
-  background-color: #ffffff !important;
-}
-
-/* For dark mode if enabled */
-.dark input,
-.dark textarea,
-.dark select {
-  color: #f3f4f6 !important;
-  background-color: #374151 !important;
-  border-color: #4b5563 !important;
+  color: var(--input-text);
+  background-color: var(--input-bg);
+  border-color: var(--border-color);
 }
 
 /* Placeholder text */
 input::placeholder,
 textarea::placeholder {
-  color: #9ca3af !important;
+  color: var(--text-tertiary);
 }
 
-.dark input::placeholder,
-.dark textarea::placeholder {
-  color: #6b7280 !important;
-}
+/* ============================================ */
+/* 6. SCROLLBAR STYLES */
+/* ============================================ */
 
-/* Scrollbar width  */
-
-/* Hide scrollbar by default, show on hover */
+/* --- Webkit (Chrome, Edge, Safari) --- */
 ::-webkit-scrollbar {
   width: 4px;
   height: 4px;
@@ -55,7 +156,16 @@ textarea::placeholder {
   background: #9ca3af;
 }
 
-/* For Firefox */
+/* Dark mode scrollbar */
+.dark *:hover::-webkit-scrollbar-thumb {
+  background: #4b5563;
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #6b7280;
+}
+
+/* --- Firefox --- */
 * {
   scrollbar-width: thin;
   scrollbar-color: transparent transparent;
@@ -63,4 +173,21 @@ textarea::placeholder {
 
 *:hover {
   scrollbar-color: #d1d5db transparent;
+}
+
+.dark *:hover {
+  scrollbar-color: #4b5563 transparent;
+}
+
+/* ============================================ */
+/* 7. SELECTION STYLES (Optional) */
+/* ============================================ */
+::selection {
+  background-color: #7c3aed;
+  color: #ffffff;
+}
+
+.dark ::selection {
+  background-color: #7c3aed;
+  color: #ffffff;
 }
