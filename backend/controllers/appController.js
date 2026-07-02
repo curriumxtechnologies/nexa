@@ -1,15 +1,17 @@
 // controllers/appController.js
 import AppVersion from '../models/appVersionModel.js';
+import User from '../models/userModel.js';
 import https from 'https';
+import jwt from 'jsonwebtoken';
 
 /**
  * Get latest app version for updates
  * GET /api/app/version
- * Public route - no authentication required
+ * Public route - uses token from query params if available
  */
 const getAppVersion = async (req, res) => {
   try {
-    const { platform = 'android', currentVersion } = req.query;
+    const { platform = 'android', currentVersion, token } = req.query;
 
     // Find the latest active version for the platform
     const latestVersion = await AppVersion.findOne({ 
@@ -27,15 +29,34 @@ const getAppVersion = async (req, res) => {
       });
     }
 
+    // Try to get user's current version from token if provided
+    let userVersion = currentVersion;
+    let userId = null;
+
+    if (token) {
+      try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        userId = decoded.id;
+        const user = await User.findById(userId).select('appVersion');
+        if (user && user.appVersion) {
+          userVersion = user.appVersion;
+        }
+      } catch (error) {
+        // Token invalid or expired - continue with provided currentVersion
+        console.log('Token verification failed, using provided version');
+      }
+    }
+
     // Check if update is needed
     let hasUpdate = false;
     let isRequired = false;
 
-    if (currentVersion) {
-      // Compare versions (simple string comparison, you can use semver library for better comparison)
-      hasUpdate = latestVersion.version !== currentVersion;
+    if (userVersion) {
+      // Compare versions (simple string comparison)
+      hasUpdate = latestVersion.version !== userVersion;
       isRequired = latestVersion.isRequired && hasUpdate;
     } else {
+      // If no version provided, assume update is needed
       hasUpdate = true;
       isRequired = latestVersion.isRequired;
     }
@@ -51,7 +72,8 @@ const getAppVersion = async (req, res) => {
         fileUrl: latestVersion.fileUrl,
         fileSize: latestVersion.fileSize,
         fileName: latestVersion.fileName,
-        releasedAt: latestVersion.createdAt
+        releasedAt: latestVersion.createdAt,
+        userVersion: userVersion // Include for debugging
       }
     });
 
@@ -66,18 +88,15 @@ const getAppVersion = async (req, res) => {
 };
 
 /**
- * Download the APK/AAB file for a given version, streamed with the
- * correct filename and extension forced via Content-Disposition —
- * this works even though the file is stored on Cloudinary internally
- * as .zip (to get around their extension restriction on .apk uploads).
+ * Download the APK/AAB file and update user's version
  * GET /api/app/download/:versionId
- * Public route - no authentication required
+ * Public route - uses token from query params if available
  */
-// controllers/appController.js — downloadApp function, just the fileName line
-
 const downloadApp = async (req, res) => {
   try {
     const { versionId } = req.params;
+    const { token } = req.query;
+
     const appVersion = await AppVersion.findById(versionId);
 
     if (!appVersion) {
@@ -94,8 +113,24 @@ const downloadApp = async (req, res) => {
       });
     }
 
-    // Always use a consistent branded filename, regardless of what
-    // the original uploaded file was named (e.g. "app-release.apk").
+    // 🔄 HYBRID APPROACH - PART 1: Update user's app version on download
+    if (token) {
+      try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        const userId = decoded.id;
+        
+        await User.findByIdAndUpdate(userId, {
+          appVersion: appVersion.version,
+          appVersionUpdatedAt: new Date()
+        });
+        console.log(`✅ Download: Updated user ${userId} app version to ${appVersion.version}`);
+      } catch (error) {
+        // Token invalid - continue with download without updating
+        console.log('⚠️ Download: Token verification failed, skipping version update');
+      }
+    }
+
+    // Always use a consistent branded filename
     const fileName = `nexa-v${appVersion.version}.apk`;
 
     res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
@@ -140,10 +175,8 @@ const downloadApp = async (req, res) => {
   }
 };
 
-// controllers/appController.js — add this function + export
-
 /**
- * Get details for a single app version, for public download landing pages.
+ * Get details for a single app version
  * GET /api/app/version/:versionId
  * Public route - no authentication required
  */
@@ -183,9 +216,177 @@ const getAppVersionById = async (req, res) => {
   }
 };
 
+/**
+ * Update user's app version manually (called during login/startup)
+ * POST /api/app/update-version
+ * Public route - uses token from body
+ */
+const updateUserAppVersion = async (req, res) => {
+  try {
+    const { token, version } = req.body;
+
+    if (!token) {
+      return res.status(401).json({
+        success: false,
+        message: 'Token is required'
+      });
+    }
+
+    if (!version) {
+      return res.status(400).json({
+        success: false,
+        message: 'Version is required'
+      });
+    }
+
+    try {
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      const userId = decoded.id;
+
+      const user = await User.findByIdAndUpdate(
+        userId,
+        {
+          appVersion: version,
+          appVersionUpdatedAt: new Date()
+        },
+        { new: true }
+      );
+
+      if (!user) {
+        return res.status(404).json({
+          success: false,
+          message: 'User not found'
+        });
+      }
+
+      console.log(`✅ Login/Startup: Verified user ${userId} app version to ${version}`);
+
+      // Get latest version to check if update is needed
+      const latestVersion = await AppVersion.findOne({ 
+        platform: 'android', 
+        isActive: true 
+      }).sort({ createdAt: -1 });
+
+      let needsUpdate = false;
+      let isRequired = false;
+      let updateInfo = null;
+
+      if (latestVersion && latestVersion.version !== version) {
+        needsUpdate = true;
+        isRequired = latestVersion.isRequired || false;
+        updateInfo = {
+          _id: latestVersion._id,
+          version: latestVersion.version,
+          releaseNotes: latestVersion.releaseNotes,
+          fileSize: latestVersion.fileSize,
+          fileName: latestVersion.fileName,
+          isRequired: latestVersion.isRequired
+        };
+      }
+
+      res.status(200).json({
+        success: true,
+        data: {
+          appVersion: user.appVersion,
+          appVersionUpdatedAt: user.appVersionUpdatedAt,
+          needsUpdate,
+          isRequired,
+          updateInfo
+        }
+      });
+
+    } catch (error) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid token',
+        error: error.message
+      });
+    }
+
+  } catch (error) {
+    console.error('Update user app version error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error updating app version',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * 🔄 HYBRID APPROACH - PART 2: Verify and correct version during login
+ * This is called from the login controller to ensure version accuracy
+ */
+const verifyAndUpdateVersionOnLogin = async (userId, deviceVersion) => {
+  try {
+    if (!userId) return null;
+
+    // Get the latest active version
+    const latestVersion = await AppVersion.findOne({ 
+      platform: 'android', 
+      isActive: true 
+    }).sort({ createdAt: -1 });
+
+    // Get current user
+    const user = await User.findById(userId);
+    if (!user) return null;
+
+    let updated = false;
+    let needsUpdate = false;
+    let versionToSave = user.appVersion;
+
+    // Case 1: User has no version in DB but device sent one
+    if (!user.appVersion && deviceVersion) {
+      versionToSave = deviceVersion;
+      updated = true;
+      console.log(`🔄 Login: User ${userId} had no version, set to ${deviceVersion}`);
+    }
+    
+    // Case 2: Device version doesn't match DB version (user updated manually via Play Store)
+    if (deviceVersion && user.appVersion && user.appVersion !== deviceVersion) {
+      versionToSave = deviceVersion;
+      updated = true;
+      console.log(`🔄 Login: User ${userId} version corrected from ${user.appVersion} to ${deviceVersion}`);
+    }
+
+    // Case 3: User has version but device didn't send one (fallback)
+    if (!deviceVersion && user.appVersion) {
+      versionToSave = user.appVersion;
+    }
+
+    // Save updated version if needed
+    if (updated && versionToSave) {
+      await User.findByIdAndUpdate(userId, {
+        appVersion: versionToSave,
+        appVersionUpdatedAt: new Date()
+      });
+    }
+
+    // Check if update is needed against latest version
+    if (latestVersion && versionToSave && latestVersion.version !== versionToSave) {
+      needsUpdate = true;
+    }
+
+    return {
+      currentVersion: versionToSave || deviceVersion || null,
+      latestVersion: latestVersion?.version || null,
+      needsUpdate,
+      isRequired: needsUpdate ? latestVersion?.isRequired || false : false,
+      versionId: needsUpdate ? latestVersion?._id : null,
+      releaseNotes: needsUpdate ? latestVersion?.releaseNotes : null,
+      corrected: updated
+    };
+
+  } catch (error) {
+    console.error('Version verification error:', error);
+    return null;
+  }
+};
+
 export {
   getAppVersion,
   getAppVersionById,
-  downloadApp
+  downloadApp,
+  updateUserAppVersion,
+  verifyAndUpdateVersionOnLogin // Export for auth controller
 };
-

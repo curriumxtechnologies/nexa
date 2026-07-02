@@ -2,7 +2,8 @@
 import React, { useState, useEffect } from 'react';
 import { Download, Smartphone, CheckCircle, XCircle, Loader2, AlertCircle, ExternalLink } from 'lucide-react';
 import { useGetAppVersionsQuery } from '../slices/adminApiSlice';
-import { getAppDownloadUrl } from '../slices/appApiSlice';
+import { getAppDownloadUrl, useUpdateUserAppVersionMutation } from '../slices/appApiSlice';
+import { useSelector } from 'react-redux';
 
 const App = () => {
   const [currentVersion, setCurrentVersion] = useState(null);
@@ -10,12 +11,19 @@ const App = () => {
   const [selectedVersion, setSelectedVersion] = useState(null);
   const [isLoadingVersion, setIsLoadingVersion] = useState(true);
   const [isNative, setIsNative] = useState(false);
-
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [downloadSuccess, setDownloadSuccess] = useState(false);
+  
+  // Get user and token from Redux
+  const { user, token } = useSelector((state) => state.auth);
+  
   const { data, isLoading, error, refetch } = useGetAppVersionsQuery({ platform: 'android' });
+  const [updateUserVersion] = useUpdateUserAppVersionMutation();
 
   const versions = data?.data?.versions || [];
   const latestVersion = data?.data?.latestVersion;
 
+  // Get app version on mount
   useEffect(() => {
     const getAppVersion = async () => {
       try {
@@ -23,9 +31,24 @@ const App = () => {
           setIsNative(true);
           const { Device } = await import('@capacitor/device');
           const info = await Device.getInfo();
-          setCurrentVersion(info.appVersion);
+          
+          // Use stored version from Redux or localStorage
+          let version = info.appVersion;
+          
+          if (user?.appVersion) {
+            version = user.appVersion;
+          } else {
+            const storedVersion = localStorage.getItem('appVersion');
+            if (storedVersion) {
+              version = storedVersion;
+            }
+          }
+          
+          setCurrentVersion(version);
         } else {
-          setCurrentVersion('1.0.0');
+          // For web, try to get from localStorage
+          const storedVersion = localStorage.getItem('appVersion');
+          setCurrentVersion(storedVersion || '1.0.0');
         }
       } catch (error) {
         console.error('Failed to get app version:', error);
@@ -36,26 +59,62 @@ const App = () => {
     };
 
     getAppVersion();
-  }, []);
+  }, [user?.appVersion]);
 
   const handleDownload = (version) => {
     setSelectedVersion(version);
     setShowModal(true);
   };
 
-  const handleConfirmDownload = () => {
+  const handleConfirmDownload = async () => {
     if (!selectedVersion?._id) {
       setShowModal(false);
       return;
     }
 
-    // Backend streams the file and forces the correct .apk filename via
-    // Content-Disposition, so this works reliably in both a regular
-    // browser and handed off to Chrome from inside Capacitor.
-    const downloadUrl = getAppDownloadUrl(selectedVersion._id);
-    window.open(downloadUrl, isNative ? '_system' : '_blank');
+    setIsDownloading(true);
 
-    setShowModal(false);
+    try {
+      // 🔄 HYBRID APPROACH: Update user's version on download
+      // Get download URL with token if available
+      const downloadUrl = getAppDownloadUrl(selectedVersion._id, token);
+      
+      // Open download in system browser
+      window.open(downloadUrl, isNative ? '_system' : '_blank');
+
+      // 🔄 HYBRID APPROACH: Update user's app version in database if token exists
+      if (token && user?.id) {
+        try {
+          await updateUserVersion({
+            token,
+            version: selectedVersion.version
+          }).unwrap();
+          console.log('✅ User version updated successfully on download');
+          
+          // Update local state
+          setCurrentVersion(selectedVersion.version);
+          setDownloadSuccess(true);
+        } catch (updateError) {
+          console.error('❌ Failed to update version in database:', updateError);
+        }
+      }
+
+      // Store version in localStorage as backup
+      localStorage.setItem('appVersion', selectedVersion.version);
+
+      // Show success state briefly
+      setTimeout(() => {
+        setShowModal(false);
+        setIsDownloading(false);
+        setDownloadSuccess(false);
+        setSelectedVersion(null);
+      }, 1500);
+
+    } catch (error) {
+      console.error('Download failed:', error);
+      setIsDownloading(false);
+      setShowModal(false);
+    }
   };
 
   const formatFileSize = (bytes) => {
@@ -118,6 +177,13 @@ const App = () => {
                 <p className="text-xs text-gray-500">Download the latest version</p>
               </div>
             </div>
+            {/* Show user's current version in header */}
+            {currentVersion && (
+              <div className="hidden sm:block text-right">
+                <p className="text-xs text-gray-400">Your version</p>
+                <p className="text-sm font-medium text-gray-700">v{currentVersion}</p>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -125,7 +191,9 @@ const App = () => {
       <div className="max-w-7xl mx-auto px-4 py-8 sm:px-6 lg:px-8">
         {/* Latest Version Banner */}
         {latestVersion && (
-          <div className="bg-gradient-to-r from-purple-600 to-purple-700 rounded-2xl p-6 mb-8 text-white">
+          <div className={`bg-gradient-to-r from-purple-600 to-purple-700 rounded-2xl p-6 mb-8 text-white ${
+            currentVersion && latestVersion.version !== currentVersion ? 'ring-2 ring-yellow-400 ring-offset-2' : ''
+          }`}>
             <div className="flex flex-col lg:flex-row items-center justify-between gap-6">
               <div className="flex-1">
                 <div className="inline-flex items-center gap-2 bg-white/20 rounded-full px-3 py-1 mb-3">
@@ -151,6 +219,12 @@ const App = () => {
                       <span>Required Update</span>
                     </div>
                   )}
+                  {currentVersion && latestVersion.version !== currentVersion && (
+                    <div className="flex items-center gap-1 bg-yellow-400/20 px-2 py-1 rounded-lg">
+                      <span className="text-yellow-200">⬆</span>
+                      <span className="text-yellow-100 text-xs">Update available</span>
+                    </div>
+                  )}
                 </div>
               </div>
               <button
@@ -158,7 +232,7 @@ const App = () => {
                 className="inline-flex items-center gap-2 px-6 py-3 bg-white text-purple-600 rounded-xl hover:bg-gray-100 transition font-semibold shadow-lg"
               >
                 <Download className="w-5 h-5" />
-                Download APK
+                {currentVersion && latestVersion.version !== currentVersion ? 'Update Now' : 'Download APK'}
               </button>
             </div>
           </div>
@@ -181,48 +255,75 @@ const App = () => {
             </div>
           ) : (
             <div className="divide-y divide-gray-100">
-              {versions.map((version, index) => (
-                <div key={version._id} className="p-6 hover:bg-gray-50 transition">
-                  <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-3 mb-2">
-                        <span className="text-lg font-semibold text-gray-900">v{version.version}</span>
-                        {index === 0 && version.isActive && (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-green-100 text-green-700 rounded-full text-xs font-medium">
-                            <CheckCircle className="w-3 h-3" />
-                            Latest
-                          </span>
+              {versions.map((version, index) => {
+                const isCurrentVersion = currentVersion === version.version;
+                const isLatest = index === 0 && version.isActive;
+                
+                return (
+                  <div key={version._id} className={`p-6 hover:bg-gray-50 transition ${
+                    isCurrentVersion ? 'bg-green-50' : ''
+                  }`}>
+                    <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-3 mb-2 flex-wrap">
+                          <span className="text-lg font-semibold text-gray-900">v{version.version}</span>
+                          {isLatest && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-green-100 text-green-700 rounded-full text-xs font-medium">
+                              <CheckCircle className="w-3 h-3" />
+                              Latest
+                            </span>
+                          )}
+                          {isCurrentVersion && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-xs font-medium">
+                              <CheckCircle className="w-3 h-3" />
+                              Installed
+                            </span>
+                          )}
+                          {!version.isActive && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-gray-100 text-gray-500 rounded-full text-xs font-medium">
+                              Archived
+                            </span>
+                          )}
+                          {version.isRequired && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-red-100 text-red-700 rounded-full text-xs font-medium">
+                              Required Update
+                            </span>
+                          )}
+                        </div>
+                        {version.releaseNotes && (
+                          <p className="text-gray-600 text-sm mb-2">{version.releaseNotes}</p>
                         )}
-                        {!version.isActive && (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-gray-100 text-gray-500 rounded-full text-xs font-medium">
-                            Archived
-                          </span>
-                        )}
-                        {version.isRequired && (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-red-100 text-red-700 rounded-full text-xs font-medium">
-                            Required Update
-                          </span>
-                        )}
+                        <div className="flex flex-wrap gap-4 text-xs text-gray-400">
+                          <span>Released: {formatDate(version.createdAt)}</span>
+                          <span>Size: {formatFileSize(version.fileSize)}</span>
+                          <span>File: {version.fileName}</span>
+                        </div>
                       </div>
-                      {version.releaseNotes && (
-                        <p className="text-gray-600 text-sm mb-2">{version.releaseNotes}</p>
-                      )}
-                      <div className="flex flex-wrap gap-4 text-xs text-gray-400">
-                        <span>Released: {formatDate(version.createdAt)}</span>
-                        <span>Size: {formatFileSize(version.fileSize)}</span>
-                        <span>File: {version.fileName}</span>
-                      </div>
+                      <button
+                        onClick={() => handleDownload(version)}
+                        disabled={isCurrentVersion}
+                        className={`inline-flex items-center gap-2 px-4 py-2 border rounded-lg transition ${
+                          isCurrentVersion
+                            ? 'border-green-200 text-green-600 bg-green-50 cursor-not-allowed'
+                            : 'border-gray-200 text-gray-700 hover:bg-gray-50'
+                        }`}
+                      >
+                        {isCurrentVersion ? (
+                          <>
+                            <CheckCircle className="w-4 h-4" />
+                            Installed
+                          </>
+                        ) : (
+                          <>
+                            <Download className="w-4 h-4" />
+                            Download
+                          </>
+                        )}
+                      </button>
                     </div>
-                    <button
-                      onClick={() => handleDownload(version)}
-                      className="inline-flex items-center gap-2 px-4 py-2 border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 transition"
-                    >
-                      <Download className="w-4 h-4" />
-                      Download
-                    </button>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
@@ -252,15 +353,32 @@ const App = () => {
           </div>
         </div>
 
-        {/* Current Version Info */}
+        {/* Current Version Info with Update Status */}
         {currentVersion && (
           <div className="mt-6 text-center">
             <p className="text-xs text-gray-400">
               Your current version: <span className="font-medium text-gray-600">v{currentVersion}</span>
               {latestVersion && currentVersion !== latestVersion.version && (
-                <span className="text-purple-600 ml-2">Update available!</span>
+                <span className="text-purple-600 ml-2 font-medium">
+                  ⬆ Update available!
+                </span>
+              )}
+              {latestVersion && currentVersion === latestVersion.version && (
+                <span className="text-green-600 ml-2">
+                  ✅ You're on the latest version
+                </span>
               )}
             </p>
+            {user?.appVersion && (
+              <p className="text-xs text-gray-400 mt-1">
+                Account version: <span className="font-medium text-gray-600">v{user.appVersion}</span>
+                {user.appVersion !== currentVersion && (
+                  <span className="text-yellow-600 ml-2">
+                    (Sync in progress)
+                  </span>
+                )}
+              </p>
+            )}
           </div>
         )}
       </div>
@@ -275,10 +393,17 @@ const App = () => {
                   <div className="w-10 h-10 bg-purple-100 rounded-full flex items-center justify-center">
                     <Download className="w-5 h-5 text-purple-600" />
                   </div>
-                  <h2 className="text-xl font-semibold text-gray-900">Download APK</h2>
+                  <h2 className="text-xl font-semibold text-gray-900">
+                    {currentVersion && selectedVersion.version !== currentVersion ? 'Update App' : 'Download APK'}
+                  </h2>
                 </div>
                 <button
-                  onClick={() => setShowModal(false)}
+                  onClick={() => {
+                    if (!isDownloading) {
+                      setShowModal(false);
+                      setSelectedVersion(null);
+                    }
+                  }}
                   className="text-gray-400 hover:text-gray-600"
                 >
                   <XCircle className="w-5 h-5" />
@@ -288,9 +413,14 @@ const App = () => {
               <div className="space-y-4">
                 <div className="p-4 bg-gray-50 rounded-xl">
                   <p className="text-sm text-gray-600 mb-2">
-                    You are about to download <span className="font-semibold text-gray-900">Nexa v{selectedVersion.version}</span>
+                    You are about to {currentVersion && selectedVersion.version !== currentVersion ? 'update to' : 'download'} <span className="font-semibold text-gray-900">Nexa v{selectedVersion.version}</span>
                   </p>
-                  <div className="flex justify-between text-xs text-gray-500">
+                  {currentVersion && selectedVersion.version !== currentVersion && (
+                    <p className="text-xs text-purple-600">
+                      Updating from v{currentVersion} to v{selectedVersion.version}
+                    </p>
+                  )}
+                  <div className="flex justify-between text-xs text-gray-500 mt-2">
                     <span>Size: {formatFileSize(selectedVersion.fileSize)}</span>
                     <span>Platform: Android</span>
                   </div>
@@ -305,16 +435,42 @@ const App = () => {
 
                 <div className="flex gap-3 pt-2">
                   <button
-                    onClick={() => setShowModal(false)}
-                    className="flex-1 px-4 py-2 border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 transition"
+                    onClick={() => {
+                      if (!isDownloading) {
+                        setShowModal(false);
+                        setSelectedVersion(null);
+                      }
+                    }}
+                    disabled={isDownloading}
+                    className={`flex-1 px-4 py-2 border border-gray-200 text-gray-700 rounded-lg transition ${
+                      isDownloading ? 'opacity-50 cursor-not-allowed' : 'hover:bg-gray-50'
+                    }`}
                   >
                     Cancel
                   </button>
                   <button
                     onClick={handleConfirmDownload}
-                    className="flex-1 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition"
+                    disabled={isDownloading}
+                    className={`flex-1 px-4 py-2 bg-purple-600 text-white rounded-lg transition ${
+                      isDownloading ? 'opacity-75 cursor-not-allowed' : 'hover:bg-purple-700'
+                    } flex items-center justify-center gap-2`}
                   >
-                    Download
+                    {isDownloading ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>Downloading...</span>
+                      </>
+                    ) : downloadSuccess ? (
+                      <>
+                        <CheckCircle className="w-4 h-4" />
+                        <span>Downloaded!</span>
+                      </>
+                    ) : (
+                      <>
+                        <Download className="w-4 h-4" />
+                        <span>Download</span>
+                      </>
+                    )}
                   </button>
                 </div>
               </div>
@@ -326,4 +482,4 @@ const App = () => {
   );
 };
 
-export default App;
+export default App; 

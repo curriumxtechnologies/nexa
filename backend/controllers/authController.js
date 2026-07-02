@@ -14,10 +14,10 @@ const generateOTP = () => {
 };
 
 // Register user
-// Register user
+// Register user with app version tracking
 const register = async (req, res) => {
   try {
-    const { email, password, name, phoneNumber, enable2FA = false } = req.body;
+    const { email, password, name, phoneNumber, enable2FA = false, appVersion = null } = req.body;
 
     // Find existing user
     const existingUser = await User.findOne({ email });
@@ -39,14 +39,12 @@ const register = async (req, res) => {
 
     let user;
     let isNewUser = false;
-    let oldProfilePicture = null;     // to restore on rollback
-    let oldUserData = null;          // for full rollback of unverified user
+    let oldProfilePicture = null;
+    let oldUserData = null;
 
     if (existingUser) {
-      // ------------------------------------------------------------
       // CASE: Unverified user exists → override with new data
-      // ------------------------------------------------------------
-      oldUserData = { ...existingUser._doc };   // shallow copy for rollback
+      oldUserData = { ...existingUser._doc };
       oldProfilePicture = existingUser.profilePicture
         ? { ...existingUser.profilePicture }
         : null;
@@ -57,7 +55,13 @@ const register = async (req, res) => {
       existingUser.phoneNumber = phoneNumber;
       existingUser.isTwoFactorEnabled = enable2FA;
       existingUser.otp = { code: otp, expiresAt: otpExpiry };
-      existingUser.isEmailVerified = false;     // ensure false (should already be)
+      existingUser.isEmailVerified = false;
+      
+      // ✅ Store app version from device if provided
+      if (appVersion) {
+        existingUser.appVersion = appVersion;
+        existingUser.appVersionUpdatedAt = new Date();
+      }
 
       // Clear any leftover 2FA / reset OTPs
       existingUser.twoFactorOTP = { code: null, expiresAt: null };
@@ -65,7 +69,6 @@ const register = async (req, res) => {
 
       // Handle profile picture
       if (req.file) {
-        // New picture uploaded → we'll delete old one after email success
         existingUser.profilePicture = {
           url: req.file.path,
           publicId: req.file.filename,
@@ -73,17 +76,11 @@ const register = async (req, res) => {
           fileSize: req.file.size,
           mimeType: req.file.mimetype
         };
-        // (old picture deletion deferred until email is sent successfully)
-      } else {
-        // Keep existing profile picture (no change)
-        // existingUser.profilePicture remains as is
       }
 
       user = existingUser;
     } else {
-      // ------------------------------------------------------------
       // CASE: Completely new user
-      // ------------------------------------------------------------
       isNewUser = true;
       const newUser = new User({
         name,
@@ -93,6 +90,9 @@ const register = async (req, res) => {
         isTwoFactorEnabled: enable2FA,
         otp: { code: otp, expiresAt: otpExpiry },
         isEmailVerified: false,
+        // ✅ Store app version from device if provided
+        appVersion: appVersion || null,
+        appVersionUpdatedAt: appVersion ? new Date() : null,
         profilePicture: req.file ? {
           url: req.file.path,
           publicId: req.file.filename,
@@ -116,9 +116,7 @@ const register = async (req, res) => {
     // Send OTP email
     const emailResult = await sendVerificationOTP(email, name, otp);
 
-    // ------------------------------------------------------------
     // If email sending fails → rollback everything
-    // ------------------------------------------------------------
     if (!emailResult.success) {
       // Delete the newly uploaded picture (if any)
       if (req.file && req.file.filename) {
@@ -132,10 +130,8 @@ const register = async (req, res) => {
       }
 
       if (isNewUser) {
-        // Delete the newly created user
         await User.findByIdAndDelete(user._id);
       } else {
-        // Revert unverified user to previous state
         const { _id, __v, ...updateData } = oldUserData;
         await User.findByIdAndUpdate(user._id, updateData);
       }
@@ -147,10 +143,7 @@ const register = async (req, res) => {
       });
     }
 
-    // ------------------------------------------------------------
     // Email sent successfully → finalize
-    // ------------------------------------------------------------
-    // If we replaced an old profile picture, delete it now
     if (existingUser && req.file && oldProfilePicture && oldProfilePicture.publicId) {
       const cloudinary = (await import('cloudinary')).v2;
       cloudinary.config({
@@ -158,7 +151,6 @@ const register = async (req, res) => {
         api_key: process.env.CLOUDINARY_API_KEY,
         api_secret: process.env.CLOUDINARY_API_SECRET,
       });
-      // Fire-and-forget (but we await to catch errors)
       await cloudinary.uploader.destroy(oldProfilePicture.publicId)
         .catch(err => console.error('Failed to delete old profile picture:', err));
     }
@@ -170,14 +162,13 @@ const register = async (req, res) => {
       data: {
         userId: user._id,
         email: user.email,
-        requiresOTPVerification: true
+        requiresOTPVerification: true,
+        appVersion: user.appVersion // ✅ Return stored version
       }
     });
 
   } catch (error) {
     console.error('Registration error:', error);
-    // If an unexpected error occurs after we've saved but before we could clean up,
-    // we might have inconsistencies. However, the main flows are covered above.
     res.status(500).json({
       success: false,
       message: 'Error during registration',
@@ -317,9 +308,10 @@ const resendVerificationOTP = async (req, res) => {
 };
 
 // Login user
+// Login user with hybrid version verification
 const login = async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { email, password, deviceVersion } = req.body;
 
     // Find user
     const user = await User.findOne({ email });
@@ -345,6 +337,41 @@ const login = async (req, res) => {
         success: false, 
         message: 'Invalid credentials' 
       });
+    }
+
+    // 🔄 HYBRID APPROACH - Verify and update app version on login
+    let versionCheck = null;
+    let needsUpdate = false;
+    let updateInfo = null;
+
+    if (deviceVersion) {
+      try {
+        // Import the verification function
+        const { verifyAndUpdateVersionOnLogin } = await import('./appController.js');
+        
+        // Verify and correct version
+        versionCheck = await verifyAndUpdateVersionOnLogin(user._id, deviceVersion);
+        
+        if (versionCheck) {
+          needsUpdate = versionCheck.needsUpdate;
+          updateInfo = versionCheck.needsUpdate ? {
+            hasUpdate: true,
+            version: versionCheck.latestVersion,
+            versionId: versionCheck.versionId,
+            releaseNotes: versionCheck.releaseNotes,
+            isRequired: versionCheck.isRequired
+          } : { hasUpdate: false };
+          
+          console.log(`✅ Login: Version verified for user ${user._id}`, {
+            current: versionCheck.currentVersion,
+            latest: versionCheck.latestVersion,
+            needsUpdate: versionCheck.needsUpdate
+          });
+        }
+      } catch (error) {
+        console.error('Version verification failed during login:', error);
+        // Continue with login even if version check fails
+      }
     }
 
     // Check if 2FA is enabled
@@ -374,7 +401,9 @@ const login = async (req, res) => {
         success: true,
         message: '2-step verification required. OTP sent to your email.',
         requiresTwoFactor: true,
-        userId: user._id
+        userId: user._id,
+        // ✅ Include update info even during 2FA
+        appUpdate: updateInfo || { hasUpdate: false }
       });
     }
 
@@ -385,19 +414,34 @@ const login = async (req, res) => {
       { expiresIn: '7d' }
     );
 
+    // Update last login
+    user.lastLoginAt = new Date();
+    await user.save();
+
+    // ✅ Build user response with latest version info
+    const userResponse = {
+      id: user._id,
+      name: user.name,
+      email: user.email,
+      phoneNumber: user.phoneNumber,
+      profilePicture: user.profilePicture,
+      isTwoFactorEnabled: user.isTwoFactorEnabled,
+      isEmailVerified: user.isEmailVerified,
+      role: user.role,
+      // ✅ Return the verified app version
+      appVersion: versionCheck?.currentVersion || user.appVersion || null,
+      appVersionUpdatedAt: user.appVersionUpdatedAt || null,
+      lastLoginAt: user.lastLoginAt
+    };
+
     res.status(200).json({
       success: true,
       message: 'Login successful',
       data: {
         token,
-        user: {
-          id: user._id,
-          name: user.name,
-          email: user.email,
-          phoneNumber: user.phoneNumber,
-          profilePicture: user.profilePicture,
-          isTwoFactorEnabled: user.isTwoFactorEnabled
-        }
+        user: userResponse,
+        // ✅ Include update info in login response
+        appUpdate: updateInfo || { hasUpdate: false }
       }
     });
 
@@ -411,6 +455,7 @@ const login = async (req, res) => {
   }
 };
 
+// Verify 2FA OTP during login
 // Verify 2FA OTP during login
 const verifyTwoFactorOTP = async (req, res) => {
   try {
@@ -450,6 +495,28 @@ const verifyTwoFactorOTP = async (req, res) => {
       { expiresIn: '7d' }
     );
 
+    // ✅ Get latest version info for the user
+    let needsUpdate = false;
+    let updateInfo = null;
+
+    try {
+      const { verifyAndUpdateVersionOnLogin } = await import('./appController.js');
+      const versionCheck = await verifyAndUpdateVersionOnLogin(user._id, user.appVersion);
+      
+      if (versionCheck?.needsUpdate) {
+        needsUpdate = true;
+        updateInfo = {
+          hasUpdate: true,
+          version: versionCheck.latestVersion,
+          versionId: versionCheck.versionId,
+          releaseNotes: versionCheck.releaseNotes,
+          isRequired: versionCheck.isRequired
+        };
+      }
+    } catch (error) {
+      console.error('Version check failed during 2FA:', error);
+    }
+
     res.status(200).json({
       success: true,
       message: '2FA verification successful',
@@ -461,8 +528,11 @@ const verifyTwoFactorOTP = async (req, res) => {
           email: user.email,
           phoneNumber: user.phoneNumber,
           profilePicture: user.profilePicture,
-          isTwoFactorEnabled: user.isTwoFactorEnabled
-        }
+          isTwoFactorEnabled: user.isTwoFactorEnabled,
+          appVersion: user.appVersion,
+          appVersionUpdatedAt: user.appVersionUpdatedAt
+        },
+        appUpdate: updateInfo || { hasUpdate: false }
       }
     });
 

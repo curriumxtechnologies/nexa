@@ -9,19 +9,38 @@ const API_BASE_URL = `${import.meta.env.VITE_API_URL || 'https://nexa-tq69.onren
 
 export const appApiSlice = apiSlice.injectEndpoints({
     endpoints: (builder) => ({
-        // Check for app updates (public - no auth needed)
+        // Check for app updates - now accepts token for version tracking
         checkAppUpdate: builder.query({
-            query: ({ platform = 'android', currentVersion }) => ({
-                url: `${APP_URL}/version?platform=${platform}&currentVersion=${currentVersion || ''}`,
-                method: 'GET',
-            }),
+            query: ({ platform = 'android', currentVersion, token }) => {
+                let url = `${APP_URL}/version?platform=${platform}`;
+                if (currentVersion) {
+                    url += `&currentVersion=${currentVersion}`;
+                }
+                if (token) {
+                    url += `&token=${token}`;
+                }
+                return {
+                    url,
+                    method: 'GET',
+                };
+            },
         }),
+        
         // Get details for a single version — used by the public
         // download landing page (AppDownload.jsx)
         getAppVersionById: builder.query({
             query: (versionId) => ({
                 url: `${APP_URL}/version/${versionId}`,
                 method: 'GET',
+            }),
+        }),
+        
+        // Update user's app version after download
+        updateUserAppVersion: builder.mutation({
+            query: ({ token, version }) => ({
+                url: `${APP_URL}/update-version`,
+                method: 'POST',
+                body: { token, version },
             }),
         }),
     }),
@@ -31,11 +50,15 @@ export const appApiSlice = apiSlice.injectEndpoints({
 export const {
     useCheckAppUpdateQuery,
     useGetAppVersionByIdQuery,
+    useUpdateUserAppVersionMutation,
 } = appApiSlice;
 
 // Builds the absolute download URL for a given app version.
-// Used directly with window.open() since this is a raw file download,
-// not a typed RTK Query call.
-export const getAppDownloadUrl = (versionId) => {
-    return `${API_BASE_URL}${APP_URL}/download/${versionId}`;
+// Now includes token parameter for version tracking
+export const getAppDownloadUrl = (versionId, token = null) => {
+    let url = `${API_BASE_URL}${APP_URL}/download/${versionId}`;
+    if (token) {
+        url += `?token=${token}`;
+    }
+    return url;
 };

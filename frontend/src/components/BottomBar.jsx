@@ -83,7 +83,7 @@ const BottomBar = () => {
     { id: 'custom-emails', label: 'Custom Emails', icon: AtSign, path: '/custom-emails' },
     { id: 'domains', label: 'Domains', icon: Globe, path: '/domains' },
     { id: 'team', label: 'Team Access', icon: Users, path: '/team' },
-    { id: 'stats', label: 'Statistics', icon: BarChart3, path: '/stats' },
+    // { id: 'stats', label: 'Statistics', icon: BarChart3, path: '/stats' },
     { id: 'settings', label: 'Settings', icon: Settings, path: '/settings' },
   ];
 

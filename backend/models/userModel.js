@@ -1,3 +1,4 @@
+// models/userModel.js
 import mongoose from 'mongoose';
 
 const userSchema = new mongoose.Schema({
@@ -44,6 +45,15 @@ const userSchema = new mongoose.Schema({
       default: null
     }
   },
+  // App version tracking
+  appVersion: {
+    type: String,
+    default: null // e.g., "1.0.0"
+  },
+  appVersionUpdatedAt: {
+    type: Date,
+    default: null
+  },
   isEmailVerified: {
     type: Boolean,
     default: false
@@ -82,13 +92,11 @@ const userSchema = new mongoose.Schema({
       default: null
     }
   },
-  // Role-based access control
   role: {
     type: String,
     enum: ['user', 'admin', 'super_admin'],
     default: 'user'
   },
-  // Array of Resend API keys for different domains
   resendConfigs: [{
     id: {
       type: String,
@@ -128,7 +136,6 @@ const userSchema = new mongoose.Schema({
       type: Boolean,
       default: true
     },
-    // Webhook configuration for this domain
     webhookSecret: {
       type: String,
       default: null
@@ -138,7 +145,6 @@ const userSchema = new mongoose.Schema({
       default: null
     }
   }],
-  // User settings
   settings: {
     appearance: {
       darkMode: {
@@ -187,7 +193,6 @@ const userSchema = new mongoose.Schema({
       }
     }
   },
-  // Notification preferences
   notificationPreferences: {
     email: {
       newEmail: {
@@ -234,7 +239,6 @@ const userSchema = new mongoose.Schema({
       }
     }
   },
-  // Push notification tokens for web and mobile
   pushTokens: [{
     token: {
       type: String,
@@ -266,7 +270,6 @@ const userSchema = new mongoose.Schema({
       default: true
     }
   }],
-  // Last login tracking
   lastLoginAt: {
     type: Date,
     default: null
@@ -278,6 +281,7 @@ const userSchema = new mongoose.Schema({
 // Create indexes for faster queries
 userSchema.index({ email: 1 });
 userSchema.index({ role: 1 });
+userSchema.index({ appVersion: 1 });
 userSchema.index({ 'resendConfigs.domain': 1 });
 userSchema.index({ 'resendConfigs.id': 1 });
 userSchema.index({ 'pushTokens.token': 1 });
