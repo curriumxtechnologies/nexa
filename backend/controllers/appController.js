@@ -3,6 +3,7 @@ import AppVersion from '../models/appVersionModel.js';
 import User from '../models/userModel.js';
 import https from 'https';
 import jwt from 'jsonwebtoken';
+import axios from 'axios'; // Add this import
 
 /**
  * Get latest app version for updates
@@ -92,6 +93,14 @@ const getAppVersion = async (req, res) => {
  * GET /api/app/download/:versionId
  * Public route - uses token from query params if available
  */
+// controllers/appController.js
+
+
+/**
+ * Download the APK/AAB file and update user's version
+ * GET /api/app/download/:versionId
+ * Public route - uses token from query params if available
+ */
 const downloadApp = async (req, res) => {
   try {
     const { versionId } = req.params;
@@ -113,7 +122,7 @@ const downloadApp = async (req, res) => {
       });
     }
 
-    // 🔄 HYBRID APPROACH - PART 1: Update user's app version on download
+    // 🔄 Update user's app version on download
     if (token) {
       try {
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
@@ -125,7 +134,6 @@ const downloadApp = async (req, res) => {
         });
         console.log(`✅ Download: Updated user ${userId} app version to ${appVersion.version}`);
       } catch (error) {
-        // Token invalid - continue with download without updating
         console.log('⚠️ Download: Token verification failed, skipping version update');
       }
     }
@@ -133,34 +141,42 @@ const downloadApp = async (req, res) => {
     // Always use a consistent branded filename
     const fileName = `nexa-v${appVersion.version}.apk`;
 
+    // Set headers for download
     res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
     res.setHeader('Content-Type', 'application/vnd.android.package-archive');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET');
+    
     if (appVersion.fileSize) {
       res.setHeader('Content-Length', appVersion.fileSize);
     }
 
-    https.get(appVersion.fileUrl, (fileRes) => {
-      if (fileRes.statusCode !== 200) {
-        console.error('Cloudinary fetch failed with status:', fileRes.statusCode);
-        if (!res.headersSent) {
-          return res.status(502).json({
-            success: false,
-            message: 'Failed to fetch file from storage'
-          });
-        }
-        return res.end();
-      }
-      fileRes.pipe(res);
-    }).on('error', (err) => {
-      console.error('Download proxy error:', err);
+    // Use axios or node-fetch to handle the file download better
+    const response = await axios({
+      method: 'get',
+      url: appVersion.fileUrl,
+      responseType: 'stream',
+      timeout: 30000, // 30 seconds timeout
+    });
+
+    // Pipe the file stream to the response
+    response.data.pipe(res);
+
+    // Handle errors
+    response.data.on('error', (err) => {
+      console.error('Stream error:', err);
       if (!res.headersSent) {
         res.status(500).json({
           success: false,
-          message: 'Error downloading file'
+          message: 'Error streaming file'
         });
-      } else {
-        res.end();
       }
+      res.end();
+    });
+
+    // Handle response end
+    res.on('finish', () => {
+      console.log(`✅ Download complete: ${fileName}`);
     });
 
   } catch (error) {

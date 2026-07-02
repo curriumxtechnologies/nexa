@@ -674,6 +674,7 @@ const getAppVersions = async (req, res) => {
       data: {
         versions,
         latestVersion: latestVersion ? {
+          _id: latestVersion._id,
           version: latestVersion.version,
           releaseNotes: latestVersion.releaseNotes,
           fileUrl: latestVersion.fileUrl,

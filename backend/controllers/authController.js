@@ -309,6 +309,8 @@ const resendVerificationOTP = async (req, res) => {
 
 // Login user
 // Login user with hybrid version verification
+// Login user
+// Login user with hybrid version verification
 const login = async (req, res) => {
   try {
     const { email, password, deviceVersion } = req.body;
@@ -357,7 +359,7 @@ const login = async (req, res) => {
           updateInfo = versionCheck.needsUpdate ? {
             hasUpdate: true,
             version: versionCheck.latestVersion,
-            versionId: versionCheck.versionId,
+            _id: versionCheck.versionId, // renamed from versionId so AppUpdateChecker.jsx's updateInfo?._id check works
             releaseNotes: versionCheck.releaseNotes,
             isRequired: versionCheck.isRequired
           } : { hasUpdate: false };
@@ -457,6 +459,8 @@ const login = async (req, res) => {
 
 // Verify 2FA OTP during login
 // Verify 2FA OTP during login
+// Verify 2FA OTP during login
+// Verify 2FA OTP during login
 const verifyTwoFactorOTP = async (req, res) => {
   try {
     const { userId, otp } = req.body;
@@ -508,7 +512,7 @@ const verifyTwoFactorOTP = async (req, res) => {
         updateInfo = {
           hasUpdate: true,
           version: versionCheck.latestVersion,
-          versionId: versionCheck.versionId,
+          _id: versionCheck.versionId, // renamed from versionId so AppUpdateChecker.jsx's updateInfo?._id check works
           releaseNotes: versionCheck.releaseNotes,
           isRequired: versionCheck.isRequired
         };
