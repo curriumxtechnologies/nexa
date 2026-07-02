@@ -10,20 +10,26 @@ import {
   Send,
   CheckCircle,
   ArrowRight,
-  CornerDownRight
+  CornerDownRight,
+  Smartphone,
+  Monitor,
+  ExternalLink
 } from 'lucide-react';
 
 const Contact = () => {
   const [copied, setCopied] = useState(false);
+  const [showEmailChoice, setShowEmailChoice] = useState(false);
+  const [isCheckingApp, setIsCheckingApp] = useState(false);
 
   const contactMethods = [
     {
       icon: Mail,
       title: 'Email Support',
       value: 'support@lovohcreate.com',
-      description: 'We respond within 24 hours',
-      action: 'mailto:support@lovohcreate.com',
-      color: 'purple'
+      description: 'Choose how to open',
+      action: '#',
+      color: 'purple',
+      onClick: () => setShowEmailChoice(true)
     },
     {
       icon: MessageCircle,
@@ -49,6 +55,85 @@ const Contact = () => {
     setTimeout(() => setCopied(false), 3000);
   };
 
+  // Check if Nexa app is installed (Android)
+  const checkNexaAppInstalled = () => {
+    return new Promise((resolve) => {
+      if (window.Capacitor?.isNativePlatform()) {
+        // In Capacitor app, we can check via deep link
+        resolve(true);
+        return;
+      }
+
+      // For web - try to detect if app is installed via intent
+      const isAndroid = /android/i.test(navigator.userAgent);
+      if (isAndroid) {
+        // Try to open Nexa app via intent
+        const intentUrl = 'intent://send?email=support@lovohcreate.com#Intent;scheme=nexa;package=com.nexa.app;end';
+        const iframe = document.createElement('iframe');
+        iframe.style.display = 'none';
+        iframe.src = intentUrl;
+        document.body.appendChild(iframe);
+        
+        // If app is installed, it will open. If not, we'll timeout.
+        const timeout = setTimeout(() => {
+          document.body.removeChild(iframe);
+          resolve(false);
+        }, 2000);
+        
+        // If the page loses focus, app was opened
+        const handleBlur = () => {
+          clearTimeout(timeout);
+          document.removeEventListener('blur', handleBlur);
+          document.body.removeChild(iframe);
+          resolve(true);
+        };
+        document.addEventListener('blur', handleBlur);
+        
+        return;
+      }
+      
+      resolve(false);
+    });
+  };
+
+  const handleEmailChoice = async (choice) => {
+    setIsCheckingApp(true);
+    setShowEmailChoice(false);
+
+    const email = 'support@lovohcreate.com';
+    const subject = 'Support Request';
+    const body = 'Hello Nexa Support Team,%0D%0A%0D%0A';
+
+    if (choice === 'nexa') {
+      // Try to open in Nexa app
+      try {
+        const isInstalled = await checkNexaAppInstalled();
+        
+        if (isInstalled) {
+          // Open in Nexa app
+          if (window.Capacitor?.isNativePlatform()) {
+            // In Capacitor app, use custom URL scheme
+            window.location.href = `nexa://compose?to=${email}&subject=${subject}&body=${body}`;
+          } else {
+            // Web - try intent
+            window.location.href = `intent://compose?to=${email}&subject=${subject}&body=${body}#Intent;scheme=nexa;package=com.nexa.app;end`;
+          }
+        } else {
+          // App not installed, fallback to Gmail
+          window.location.href = `mailto:${email}?subject=${subject}&body=${body}`;
+        }
+      } catch (error) {
+        // Fallback to Gmail
+        window.location.href = `mailto:${email}?subject=${subject}&body=${body}`;
+      }
+    } else {
+      // Open in Gmail/Webmail
+      window.location.href = `mailto:${email}?subject=${subject}&body=${body}`;
+    }
+
+    setIsCheckingApp(false);
+  };
+
   const colorMap = {
     purple: 'from-purple-500 to-purple-600 border-purple-500/20 bg-purple-500/10 hover:border-purple-500/40',
     green: 'from-green-500 to-emerald-600 border-green-500/20 bg-green-500/10 hover:border-green-500/40',
@@ -66,7 +151,7 @@ const Contact = () => {
 
       <div className="relative z-10 max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
         
-        {/* Header - Minimal */}
+        {/* Header */}
         <div className="text-center max-w-2xl mx-auto mb-10 sm:mb-14">
           <div className="inline-flex items-center gap-2 border border-purple-500/20 rounded-full px-4 py-1.5 mb-4">
             <span className="text-purple-400 text-[10px] tracking-wider font-light">CONTACT</span>
@@ -79,7 +164,7 @@ const Contact = () => {
           </p>
         </div>
 
-        {/* Contact Cards - Mobile First */}
+        {/* Contact Cards */}
         <div className="space-y-3 mb-8">
           {contactMethods.map((method, index) => {
             const Icon = method.icon;
@@ -87,7 +172,8 @@ const Contact = () => {
             return (
               <div
                 key={index}
-                className={`group border ${colors.split(' ')[2]} rounded-2xl p-4 bg-opacity-5 transition-all duration-300 hover:border-opacity-100`}
+                className={`group border ${colors.split(' ')[2]} rounded-2xl p-4 bg-opacity-5 transition-all duration-300 hover:border-opacity-100 cursor-pointer`}
+                onClick={method.onClick}
               >
                 <div className="flex items-center gap-3">
                   {/* Icon */}
@@ -101,7 +187,10 @@ const Contact = () => {
                     <div className="flex items-center gap-2">
                       <p className="text-purple-400 text-sm font-light truncate">{method.value}</p>
                       <button
-                        onClick={() => handleCopy(method.value)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleCopy(method.value);
+                        }}
                         className="p-1 hover:bg-white/5 rounded transition flex-shrink-0"
                       >
                         {copied ? (
@@ -115,24 +204,80 @@ const Contact = () => {
                   </div>
                   
                   {/* Action Button */}
-                  <a
-                    href={method.action}
-                    target={method.icon === Mail ? '_self' : '_blank'}
-                    rel={method.icon === Mail ? '' : 'noopener noreferrer'}
-                    className="w-10 h-10 rounded-full border border-white/10 flex items-center justify-center flex-shrink-0 hover:border-white/20 hover:bg-white/5 transition"
-                  >
+                  <div className="w-10 h-10 rounded-full border border-white/10 flex items-center justify-center flex-shrink-0 hover:border-white/20 hover:bg-white/5 transition">
                     <ArrowRight className="w-4 h-4 text-gray-400" />
-                  </a>
+                  </div>
                 </div>
               </div>
             );
           })}
         </div>
 
+        {/* Email Choice Modal */}
+        {showEmailChoice && (
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-xl flex items-center justify-center z-50 p-4 animate-in fade-in duration-300">
+            <div className="bg-[#12121a] border border-white/5 rounded-3xl max-w-md w-full p-6">
+              <div className="text-center mb-6">
+                <div className="w-16 h-16 bg-purple-500/20 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                  <Mail className="w-8 h-8 text-purple-400" />
+                </div>
+                <h3 className="text-xl font-light text-white mb-2">Open Email</h3>
+                <p className="text-sm text-gray-400 font-light">Choose how you'd like to send your email</p>
+              </div>
+
+              <div className="space-y-3">
+                <button
+                  onClick={() => handleEmailChoice('nexa')}
+                  className="w-full flex items-center gap-4 p-4 border border-purple-500/20 rounded-2xl hover:border-purple-500/40 hover:bg-purple-500/5 transition group"
+                >
+                  <div className="w-12 h-12 bg-purple-500/20 rounded-xl flex items-center justify-center group-hover:scale-110 transition">
+                    <Smartphone className="w-6 h-6 text-purple-400" />
+                  </div>
+                  <div className="flex-1 text-left">
+                    <p className="text-sm font-medium text-white">Nexa App</p>
+                    <p className="text-xs text-gray-400">Open in Nexa if installed</p>
+                  </div>
+                  <ExternalLink className="w-4 h-4 text-gray-500 group-hover:text-purple-400 transition" />
+                </button>
+
+                <button
+                  onClick={() => handleEmailChoice('gmail')}
+                  className="w-full flex items-center gap-4 p-4 border border-white/10 rounded-2xl hover:border-white/20 hover:bg-white/5 transition group"
+                >
+                  <div className="w-12 h-12 bg-blue-500/20 rounded-xl flex items-center justify-center group-hover:scale-110 transition">
+                    <Monitor className="w-6 h-6 text-blue-400" />
+                  </div>
+                  <div className="flex-1 text-left">
+                    <p className="text-sm font-medium text-white">Gmail / Webmail</p>
+                    <p className="text-xs text-gray-400">Open in your default email client</p>
+                  </div>
+                  <ExternalLink className="w-4 h-4 text-gray-500 group-hover:text-blue-400 transition" />
+                </button>
+              </div>
+
+              <button
+                onClick={() => setShowEmailChoice(false)}
+                className="w-full mt-4 text-sm text-gray-500 hover:text-gray-300 transition font-light py-2"
+              >
+                Cancel
+              </button>
+
+              {isCheckingApp && (
+                <div className="mt-4 text-center">
+                  <div className="inline-flex items-center gap-2 text-xs text-purple-400">
+                    <div className="w-4 h-4 border-2 border-purple-400 border-t-transparent rounded-full animate-spin"></div>
+                    <span>Checking for Nexa app...</span>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Divider */}
         <div className="border-t border-white/5 my-8"></div>
 
-        {/* Two Column - Mobile Stack */}
+        {/* Two Column */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 mb-8">
           {/* Office Hours */}
           <div className="border border-white/5 rounded-2xl p-4">
@@ -184,16 +329,16 @@ const Contact = () => {
           </div>
         </div>
 
-        {/* CTA - Clean */}
+        {/* CTA */}
         <div className="text-center">
           <div className="inline-flex flex-col sm:flex-row items-center gap-3 border border-white/5 rounded-2xl p-2 bg-white/5">
-            <a
-              href="mailto:support@lovohcreate.com"
+            <button
+              onClick={() => setShowEmailChoice(true)}
               className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-3 bg-purple-500 text-white rounded-xl hover:bg-purple-600 transition text-sm font-light tracking-wider"
             >
               <Send className="w-4 h-4" />
               Email Us
-            </a>
+            </button>
             <a
               href="https://wa.me/2348058586759"
               target="_blank"
