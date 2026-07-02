@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useGetUsersQuery, useAssignRoleMutation } from '../slices/adminApiSlice';
 import { 
   Crown, 
@@ -17,10 +17,9 @@ import {
   ChevronLeft,
   ChevronRight,
   Users,
-  Star,
-  PlusCircle
+  ChevronDown
 } from 'lucide-react';
-import { formatDistanceToNow, format } from 'date-fns';
+import { format } from 'date-fns';
 import { toast } from 'react-hot-toast';
 
 const SAdminRoleManager = () => {
@@ -30,6 +29,8 @@ const SAdminRoleManager = () => {
   const [showRoleModal, setShowRoleModal] = useState(null);
   const [selectedRole, setSelectedRole] = useState('');
   const [showMobileMenu, setShowMobileMenu] = useState(null);
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const dropdownRef = useRef(null);
   const limit = 20;
 
   const { data, isLoading, error, refetch } = useGetUsersQuery({
@@ -44,6 +45,44 @@ const SAdminRoleManager = () => {
   const total = data?.data?.total || 0;
   const totalPages = data?.data?.totalPages || 0;
 
+  // Role options with icons
+  const roleOptions = [
+    { 
+      value: 'user', 
+      label: 'User', 
+      icon: User, 
+      description: 'Basic email access',
+      color: 'text-gray-600'
+    },
+    { 
+      value: 'admin', 
+      label: 'Admin', 
+      icon: Shield, 
+      description: 'Manage users, analytics, app versions',
+      color: 'text-purple-600'
+    },
+    { 
+      value: 'super_admin', 
+      label: 'Super Admin', 
+      icon: Crown, 
+      description: 'Full system access incl. role management',
+      color: 'text-amber-600'
+    },
+  ];
+
+  const getSelectedOption = () => roleOptions.find(opt => opt.value === selectedRole) || null;
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+        setIsDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
   const handleAssignRole = async (userId) => {
     if (!selectedRole) {
       toast.error('Please select a role');
@@ -55,6 +94,7 @@ const SAdminRoleManager = () => {
       toast.success(`Role changed to ${selectedRole.replace('_', ' ')} successfully`);
       setShowRoleModal(null);
       setSelectedRole('');
+      setIsDropdownOpen(false);
       refetch();
     } catch (err) {
       toast.error(err.data?.message || 'Failed to assign role');
@@ -472,20 +512,61 @@ const SAdminRoleManager = () => {
                   </div>
                 </div>
 
+                {/* Custom Role Dropdown */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Select New Role
                   </label>
-                  <select
-                    value={selectedRole}
-                    onChange={(e) => setSelectedRole(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-400 focus:border-transparent outline-none text-sm"
-                  >
-                    <option value="">Select a role</option>
-                    <option value="user">👤 User - Basic access</option>
-                    <option value="admin">🛡️ Admin - Manage users, analytics, app versions</option>
-                    <option value="super_admin">👑 Super Admin - Full system access</option>
-                  </select>
+                  <div className="relative" ref={dropdownRef}>
+                    <button
+                      type="button"
+                      onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm flex items-center justify-between bg-white hover:border-purple-400 focus:ring-2 focus:ring-purple-400 focus:border-transparent outline-none transition"
+                    >
+                      <div className="flex items-center space-x-2">
+                        {selectedRole ? (
+                          <>
+                            {React.createElement(getSelectedOption()?.icon || User, { className: "w-4 h-4 text-gray-500" })}
+                            <span>{getSelectedOption()?.label || 'Select a role'}</span>
+                          </>
+                        ) : (
+                          <span className="text-gray-400">Select a role</span>
+                        )}
+                      </div>
+                      <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${isDropdownOpen ? 'rotate-180' : ''}`} />
+                    </button>
+                    
+                    {isDropdownOpen && (
+                      <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-auto">
+                        {roleOptions.map((option) => (
+                          <button
+                            key={option.value}
+                            type="button"
+                            onClick={() => {
+                              setSelectedRole(option.value);
+                              setIsDropdownOpen(false);
+                            }}
+                            className={`w-full px-3 py-2 text-sm flex items-center space-x-3 hover:bg-purple-50 transition ${
+                              selectedRole === option.value ? 'bg-purple-50' : ''
+                            }`}
+                          >
+                            {React.createElement(option.icon, { 
+                              className: `w-4 h-4 ${selectedRole === option.value ? 'text-purple-600' : 'text-gray-500'}` 
+                            })}
+                            <div className="flex-1 text-left">
+                              <p className={`font-medium ${selectedRole === option.value ? 'text-purple-700' : 'text-gray-700'}`}>
+                                {option.label}
+                              </p>
+                              <p className="text-xs text-gray-400">{option.description}</p>
+                            </div>
+                            {selectedRole === option.value && (
+                              <CheckCircle className="w-4 h-4 text-purple-600" />
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 <div className="p-3 bg-amber-50 rounded-lg">

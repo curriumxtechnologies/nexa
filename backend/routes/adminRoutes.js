@@ -26,16 +26,39 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
+// routes/adminRoutes.js — storage config only
 const apkStorage = new CloudinaryStorage({
   cloudinary: cloudinary,
-  params: {
-    folder: "nexa_app_versions",
-    resource_type: "raw",
-    allowed_formats: ["apk", "aab", "zip"],
+  params: async (req, file) => {
+    return {
+      folder: 'nexa_app_versions',
+      resource_type: 'raw',
+      public_id: `${Date.now()}-${file.originalname.replace(/\.[^/.]+$/, '')}`,
+      format: 'zip', // Cloudinary allows this extension for raw uploads
+    };
   },
 });
 
-const uploadApk = multer({ storage: apkStorage });
+const uploadApk = multer({
+  storage: apkStorage,
+  limits: { fileSize: 100 * 1024 * 1024 }, // 100MB, matches frontend check
+});
+
+// Wraps multer so upload errors (Cloudinary auth, format rejection, etc.)
+// are caught and logged instead of silently crashing before reaching the controller.
+const handleApkUpload = (req, res, next) => {
+  uploadApk.single('apkFile')(req, res, (err) => {
+    if (err) {
+      console.error('Multer/Cloudinary upload error:', err);
+      return res.status(500).json({
+        success: false,
+        message: 'File upload failed',
+        error: err.message
+      });
+    }
+    next();
+  });
+};
 
 // Public routes (no auth needed for checking updates)
 router.get('/app/versions', getAppVersions);
@@ -54,7 +77,7 @@ router.delete('/users/:userId', deleteUser);
 router.get('/stats/emails', getEmailStats);
 
 // App management
-router.post('/app/upload', uploadApk.single('apkFile'), uploadApp);
+router.post('/app/upload', handleApkUpload, uploadApp);
 router.put('/app/update/:versionId', updateApp);
 router.delete('/app/delete/:versionId', deleteApp);
 

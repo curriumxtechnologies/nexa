@@ -458,6 +458,12 @@ const getEmailStats = async (req, res) => {
  * Upload new app version (APK/AAB) - admin & super_admin only
  * POST /api/admin/app/upload
  */
+// controllers/adminController.js — uploadApp function only
+
+/**
+ * Upload new app version (APK/AAB) - admin & super_admin only
+ * POST /api/admin/app/upload
+ */
 const uploadApp = async (req, res) => {
   try {
     const userId = req.userId;
@@ -488,14 +494,28 @@ const uploadApp = async (req, res) => {
       });
     }
 
+    // multer-storage-cloudinary sometimes returns the Cloudinary URL as
+    // req.file.path and sometimes as req.file.secure_url/url depending on
+    // version — cover all cases so fileUrl is never undefined.
+    const fileUrl = req.file.path || req.file.secure_url || req.file.url;
+    const filePublicId = req.file.filename || req.file.public_id;
+
+    if (!fileUrl) {
+      console.error('Upload app error: no file URL returned from storage', req.file);
+      return res.status(500).json({
+        success: false,
+        message: 'File upload succeeded but no file URL was returned'
+      });
+    }
+
     const appVersion = new AppVersion({
       version,
       releaseNotes: releaseNotes || '',
-      fileUrl: req.file.path,
+      fileUrl,
       fileSize: req.file.size,
       fileName: req.file.originalname,
-      filePublicId: req.file.filename,
-      isRequired,
+      filePublicId,
+      isRequired: isRequired === 'true' || isRequired === true,
       platform,
       uploadedBy: userId,
       isActive: true

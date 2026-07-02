@@ -2,12 +2,14 @@
 import React, { useState, useEffect } from 'react';
 import { Download, Smartphone, CheckCircle, XCircle, Loader2, AlertCircle, ExternalLink } from 'lucide-react';
 import { useGetAppVersionsQuery } from '../slices/adminApiSlice';
+import { getAppDownloadUrl } from '../slices/appApiSlice';
 
 const App = () => {
   const [currentVersion, setCurrentVersion] = useState(null);
   const [showModal, setShowModal] = useState(false);
   const [selectedVersion, setSelectedVersion] = useState(null);
   const [isLoadingVersion, setIsLoadingVersion] = useState(true);
+  const [isNative, setIsNative] = useState(false);
 
   const { data, isLoading, error, refetch } = useGetAppVersionsQuery({ platform: 'android' });
 
@@ -18,6 +20,7 @@ const App = () => {
     const getAppVersion = async () => {
       try {
         if (window.Capacitor?.isNativePlatform()) {
+          setIsNative(true);
           const { Device } = await import('@capacitor/device');
           const info = await Device.getInfo();
           setCurrentVersion(info.appVersion);
@@ -41,9 +44,17 @@ const App = () => {
   };
 
   const handleConfirmDownload = () => {
-    if (selectedVersion?.fileUrl) {
-      window.open(selectedVersion.fileUrl, '_blank');
+    if (!selectedVersion?._id) {
+      setShowModal(false);
+      return;
     }
+
+    // Backend streams the file and forces the correct .apk filename via
+    // Content-Disposition, so this works reliably in both a regular
+    // browser and handed off to Chrome from inside Capacitor.
+    const downloadUrl = getAppDownloadUrl(selectedVersion._id);
+    window.open(downloadUrl, isNative ? '_system' : '_blank');
+
     setShowModal(false);
   };
 

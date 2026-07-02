@@ -1,5 +1,6 @@
 // controllers/appController.js
 import AppVersion from '../models/appVersionModel.js';
+import https from 'https';
 
 /**
  * Get latest app version for updates
@@ -44,6 +45,7 @@ const getAppVersion = async (req, res) => {
       data: {
         hasUpdate,
         isRequired,
+        _id: latestVersion._id,
         version: latestVersion.version,
         releaseNotes: latestVersion.releaseNotes,
         fileUrl: latestVersion.fileUrl,
@@ -63,6 +65,80 @@ const getAppVersion = async (req, res) => {
   }
 };
 
+/**
+ * Download the APK/AAB file for a given version, streamed with the
+ * correct filename and extension forced via Content-Disposition —
+ * this works even though the file is stored on Cloudinary internally
+ * as .zip (to get around their extension restriction on .apk uploads).
+ * GET /api/app/download/:versionId
+ * Public route - no authentication required
+ */
+const downloadApp = async (req, res) => {
+  try {
+    const { versionId } = req.params;
+    const appVersion = await AppVersion.findById(versionId);
+
+    if (!appVersion) {
+      return res.status(404).json({
+        success: false,
+        message: 'App version not found'
+      });
+    }
+
+    if (!appVersion.isActive) {
+      return res.status(403).json({
+        success: false,
+        message: 'This version is no longer available'
+      });
+    }
+
+    const fileName = appVersion.fileName?.endsWith('.apk')
+      ? appVersion.fileName
+      : `nexa-v${appVersion.version}.apk`;
+
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    res.setHeader('Content-Type', 'application/vnd.android.package-archive');
+    if (appVersion.fileSize) {
+      res.setHeader('Content-Length', appVersion.fileSize);
+    }
+
+    https.get(appVersion.fileUrl, (fileRes) => {
+      if (fileRes.statusCode !== 200) {
+        console.error('Cloudinary fetch failed with status:', fileRes.statusCode);
+        if (!res.headersSent) {
+          return res.status(502).json({
+            success: false,
+            message: 'Failed to fetch file from storage'
+          });
+        }
+        return res.end();
+      }
+      fileRes.pipe(res);
+    }).on('error', (err) => {
+      console.error('Download proxy error:', err);
+      if (!res.headersSent) {
+        res.status(500).json({
+          success: false,
+          message: 'Error downloading file'
+        });
+      } else {
+        res.end();
+      }
+    });
+
+  } catch (error) {
+    console.error('Download app error:', error);
+    if (!res.headersSent) {
+      res.status(500).json({
+        success: false,
+        message: 'Error downloading app',
+        error: error.message
+      });
+    }
+  }
+};
+
 export {
-  getAppVersion
+  getAppVersion,
+  downloadApp
 };

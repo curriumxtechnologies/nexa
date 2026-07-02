@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useGetAppVersionsQuery, useUploadAppMutation, useUpdateAppMutation, useDeleteAppMutation } from '../slices/adminApiSlice';
+import { getAppDownloadUrl } from '../slices/appApiSlice';
 import { 
   Code, 
   Upload, 
@@ -140,6 +141,16 @@ const AdminAppManager = () => {
     setShowEditModal(version);
   };
 
+  // Opens the backend download proxy, which streams the file with the
+  // correct .apk filename forced via Content-Disposition — same route
+  // used everywhere else in the app, instead of fetching Cloudinary
+  // directly and doing a client-side blob rename.
+  const handleDownload = (version) => {
+    if (!version?._id) return;
+    const downloadUrl = getAppDownloadUrl(version._id);
+    window.open(downloadUrl, '_blank');
+  };
+
   const formatFileSize = (bytes) => {
     if (!bytes) return 'Unknown';
     const sizes = ['B', 'KB', 'MB', 'GB'];
@@ -271,14 +282,13 @@ const AdminAppManager = () => {
                   )}
                 </div>
               </div>
-              <a
-                href={latestVersion.fileUrl}
-                download
+              <button
+                onClick={() => handleDownload(latestVersion)}
                 className="flex items-center space-x-2 px-4 py-2 bg-white text-purple-600 rounded-lg hover:bg-purple-50 transition text-sm font-medium"
               >
                 <Download className="w-4 h-4" />
                 <span>Download APK</span>
-              </a>
+              </button>
             </div>
           </div>
         )}
@@ -331,14 +341,13 @@ const AdminAppManager = () => {
                       </div>
                     </div>
                     <div className="flex items-center space-x-2">
-                      <a
-                        href={version.fileUrl}
-                        download
+                      <button
+                        onClick={() => handleDownload(version)}
                         className="p-2 text-gray-400 hover:text-purple-600 transition rounded-lg"
                         title="Download"
                       >
                         <Download className="w-4 h-4" />
-                      </a>
+                      </button>
                       <button
                         onClick={() => openEditModal(version)}
                         className="p-2 text-gray-400 hover:text-blue-600 transition rounded-lg"

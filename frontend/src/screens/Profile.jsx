@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { useGetProfileQuery, useUpdateProfileMutation, useChangePasswordMutation, useToggleTwoFactorMutation } from '../slices/userApiSlice';
 import { setCredentials, logout } from '../slices/authSlice';
@@ -31,7 +31,7 @@ const Profile = () => {
   const { data: profileData, isLoading: profileLoading, error: profileError, refetch } = useGetProfileQuery();
   const [updateProfile, { isLoading: isUpdating }] = useUpdateProfileMutation();
   const [changePassword, { isLoading: isChangingPassword }] = useChangePasswordMutation();
-  const [toggleTwoFactor, { isLoading: isToggling2FA }] = useToggleTwoFactorMutation(); // ✅ Correct hook name
+  const [toggleTwoFactor, { isLoading: isToggling2FA }] = useToggleTwoFactorMutation();
   
   const [formData, setFormData] = useState({
     name: '',
@@ -54,7 +54,6 @@ const Profile = () => {
   const [success, setSuccess] = useState('');
   const [show2FAModal, setShow2FAModal] = useState(false);
 
-  // Get user data from profile API response
   const user = profileData?.data || userInfo;
 
   useEffect(() => {
@@ -70,23 +69,23 @@ const Profile = () => {
     }
   }, [user]);
 
-  const handleChange = (e) => {
-    setFormData({
-      ...formData,
+  const handleChange = useCallback((e) => {
+    setFormData(prev => ({
+      ...prev,
       [e.target.name]: e.target.value,
-    });
+    }));
     setError('');
     setSuccess('');
-  };
+  }, []);
 
-  const handlePasswordChange = (e) => {
-    setPasswordData({
-      ...passwordData,
+  const handlePasswordChange = useCallback((e) => {
+    setPasswordData(prev => ({
+      ...prev,
       [e.target.name]: e.target.value,
-    });
+    }));
     setError('');
     setSuccess('');
-  };
+  }, []);
 
   const handleFileChange = (e) => {
     const file = e.target.files[0];
@@ -125,16 +124,12 @@ const Profile = () => {
       }
 
       const result = await updateProfile(formDataToSend).unwrap();
-      
-      // Update Redux store with new user data
       dispatch(setCredentials({ user: result.data, token: userInfo?.token }));
-      
       toast.success('Profile updated successfully');
       setSuccess('Profile updated successfully');
       setIsEditing(false);
       setProfilePicture(null);
       refetch();
-      
       setTimeout(() => setSuccess(''), 3000);
     } catch (err) {
       const errorMsg = err.data?.message || 'Failed to update profile';
@@ -176,7 +171,6 @@ const Profile = () => {
         confirmPassword: '',
       });
       setIsChangingPass(false);
-      
       setTimeout(() => setSuccess(''), 3000);
     } catch (err) {
       const errorMsg = err.data?.message || 'Failed to change password';
@@ -190,19 +184,15 @@ const Profile = () => {
       const result = await toggleTwoFactor({ enable: !user?.isTwoFactorEnabled }).unwrap();
       refetch();
       setShow2FAModal(false);
-      
-      // Update Redux store
       if (userInfo) {
         dispatch(setCredentials({ 
           user: { ...userInfo, isTwoFactorEnabled: result.data.isTwoFactorEnabled }, 
           token: userInfo.token 
         }));
       }
-      
       const message = `2FA ${!user?.isTwoFactorEnabled ? 'enabled' : 'disabled'} successfully`;
       toast.success(message);
       setSuccess(message);
-      
       setTimeout(() => setSuccess(''), 3000);
     } catch (err) {
       const errorMsg = err.data?.message || 'Failed to toggle 2FA';
@@ -265,8 +255,11 @@ const Profile = () => {
     );
   }
 
-  // Mobile View
-  const MobileView = () => (
+  // Mobile View — plain JSX variable, NOT a component function.
+  // Defining these as components (e.g. const MobileView = () => (...))
+  // makes React remount the whole tree on every keystroke, which is
+  // what was stealing focus from your inputs.
+  const mobileView = (
     <div className="md:hidden bg-gray-50 min-h-screen pb-20">
       {/* Header */}
       <div className="bg-white border-b border-gray-100 px-4 py-3 sticky top-0 z-10">
@@ -423,7 +416,6 @@ const Profile = () => {
           </form>
         ) : (
           <>
-            {/* Info Cards */}
             <div className="space-y-3">
               <div className="bg-white rounded-lg border border-gray-100 p-3 flex items-center justify-between">
                 <div className="flex items-center space-x-3">
@@ -496,7 +488,6 @@ const Profile = () => {
               </div>
             </div>
 
-            {/* Action Buttons */}
             <div className="mt-6 space-y-2">
               <button
                 onClick={() => setIsChangingPass(true)}
@@ -519,12 +510,11 @@ const Profile = () => {
     </div>
   );
 
-  // Desktop View
-  const DesktopView = () => (
+  // Desktop View — also a plain JSX variable, same reasoning as above.
+  const desktopView = (
     <div className="hidden md:block min-h-screen bg-gray-50">
       <div className="px-6 py-6 lg:px-8">
         <div className="max-w-4xl mx-auto">
-          {/* Header */}
           <div className="mb-6">
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-2">
@@ -560,7 +550,6 @@ const Profile = () => {
           )}
 
           <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
-            {/* Profile Header */}
             <div className="bg-gradient-to-r from-purple-600 to-purple-800 px-6 py-8 relative">
               <div className="absolute -bottom-12 left-6">
                 {isEditing ? (
@@ -751,8 +740,8 @@ const Profile = () => {
 
   return (
     <>
-      <MobileView />
-      <DesktopView />
+      {mobileView}
+      {desktopView}
 
       {/* 2FA Modal */}
       {show2FAModal && (

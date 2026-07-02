@@ -18,7 +18,7 @@ import {
 const Stats = () => {
   const { data, isLoading, error, refetch } = useGetEmailStatsQuery();
 
-  // ✅ Safe extraction – even if data.data is empty, all fields get defaults
+  // Safe defaults – even if data.data is empty, all fields get default 0
   const stats = {
     totalSent: data?.data?.totalSent ?? 0,
     totalReceived: data?.data?.totalReceived ?? 0,
@@ -35,14 +35,14 @@ const Stats = () => {
 
   const statCards = [
     {
-      title: 'Total Sent',
+      title: 'Sent',
       value: stats.totalSent,
       icon: Send,
       color: 'blue',
       description: 'Emails you have sent'
     },
     {
-      title: 'Total Received',
+      title: 'Received',
       value: stats.totalReceived,
       icon: Inbox,
       color: 'green',
@@ -67,14 +67,14 @@ const Stats = () => {
       value: stats.customEmailsCount,
       icon: Users,
       color: 'indigo',
-      description: 'Email addresses created'
+      description: 'Email addresses you created'
     },
     {
       title: 'Domains',
       value: stats.domainsCount,
       icon: Globe,
       color: 'teal',
-      description: 'Verified domains'
+      description: 'Verified domains you own'
     }
   ];
 
@@ -95,7 +95,7 @@ const Stats = () => {
       <div className="flex items-center justify-center min-h-[60vh]">
         <div className="text-center">
           <Loader2 className="w-10 h-10 text-purple-600 animate-spin mx-auto mb-3" />
-          <p className="text-sm text-gray-400">Loading statistics...</p>
+          <p className="text-sm text-gray-400">Loading your statistics…</p>
         </div>
       </div>
     );
@@ -116,13 +116,13 @@ const Stats = () => {
     );
   }
 
-  // ─── Mobile View ────────────────────────────────────────────────────────────────
+  // ─── Mobile View ─────────────────────────────────────────────
   const MobileView = () => (
     <div className="md:hidden bg-gray-50 min-h-screen pb-20">
       <div className="bg-white border-b border-gray-100 px-4 py-3 sticky top-0 z-10">
         <div className="flex items-center space-x-2">
           <BarChart3 className="w-5 h-5 text-purple-600" />
-          <h1 className="text-base font-semibold text-gray-800">Statistics</h1>
+          <h1 className="text-base font-semibold text-gray-800">Your Stats</h1>
         </div>
       </div>
 
@@ -157,15 +157,15 @@ const Stats = () => {
           </div>
           <div className="divide-y divide-gray-50">
             <div className="p-4 flex items-center justify-between">
-              <span className="text-sm text-gray-500">Total Emails</span>
+              <span className="text-sm text-gray-500">Total emails</span>
               <span className="text-sm font-semibold text-gray-800">{totalEmails.toLocaleString()}</span>
             </div>
             <div className="p-4 flex items-center justify-between">
-              <span className="text-sm text-gray-500">Sent vs Received</span>
-              <span className="text-sm font-semibold text-gray-800">{stats.totalSent}:{stats.totalReceived}</span>
+              <span className="text-sm text-gray-500">Sent : Received</span>
+              <span className="text-sm font-semibold text-gray-800">{stats.totalSent} : {stats.totalReceived}</span>
             </div>
             <div className="p-4 flex items-center justify-between">
-              <span className="text-sm text-gray-500">Read Rate</span>
+              <span className="text-sm text-gray-500">Read rate</span>
               <div className="flex items-center space-x-2">
                 <div className="w-20 h-1.5 bg-gray-200 rounded-full overflow-hidden">
                   <div className={`h-full rounded-full ${readRate > 50 ? 'bg-green-500' : 'bg-yellow-500'}`} style={{ width: `${readRate}%` }} />
@@ -174,29 +174,28 @@ const Stats = () => {
               </div>
             </div>
             <div className="p-4 flex items-center justify-between">
-              <span className="text-sm text-gray-500">Active Domains</span>
+              <span className="text-sm text-gray-500">Active domains</span>
               <span className="text-sm font-semibold text-gray-800">{stats.domainsCount}</span>
             </div>
             <div className="p-4 flex items-center justify-between">
-              <span className="text-sm text-gray-500">Custom Emails</span>
+              <span className="text-sm text-gray-500">Custom emails</span>
               <span className="text-sm font-semibold text-gray-800">{stats.customEmailsCount}</span>
             </div>
             <div className="p-4 flex items-center justify-between">
-              <span className="text-sm text-gray-500">Starred Emails</span>
+              <span className="text-sm text-gray-500">Starred emails</span>
               <span className="text-sm font-semibold text-gray-800">{stats.starred}</span>
             </div>
           </div>
         </div>
 
-        {/* Note */}
-        <div className="bg-yellow-50 rounded-xl border border-yellow-100 p-3">
-          <p className="text-xs text-yellow-700">More detailed statistics (charts, email trends, domain analytics) will be available in a future update.</p>
+        <div className="bg-purple-50 rounded-xl border border-purple-100 p-3">
+          <p className="text-xs text-purple-700">These are your personal email statistics. Admin‑level stats are available in the admin dashboard.</p>
         </div>
       </div>
     </div>
   );
 
-  // ─── Desktop View ────────────────────────────────────────────────────────────────
+  // ─── Desktop View ─────────────────────────────────────────────
   const DesktopView = () => (
     <div className="hidden md:block min-h-screen bg-gray-50">
       <div className="px-6 py-6 lg:px-8">
@@ -208,8 +207,8 @@ const Stats = () => {
                 <BarChart3 className="w-5 h-5 text-purple-600" />
               </div>
               <div>
-                <h1 className="text-lg font-semibold text-gray-800">Statistics</h1>
-                <p className="text-xs text-gray-400">Overview of your email activity</p>
+                <h1 className="text-lg font-semibold text-gray-800">Your Statistics</h1>
+                <p className="text-xs text-gray-400">Personal email activity overview</p>
               </div>
             </div>
           </div>
@@ -243,7 +242,7 @@ const Stats = () => {
             })}
           </div>
 
-          {/* Two Column Layout */}
+          {/* Two‑column layout */}
           <div className="grid grid-cols-2 gap-6">
             {/* Summary Section */}
             <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
@@ -255,15 +254,15 @@ const Stats = () => {
               </div>
               <div className="p-5 space-y-4">
                 <div className="flex items-center justify-between pb-2 border-b border-gray-100">
-                  <span className="text-sm text-gray-500">Total Emails</span>
+                  <span className="text-sm text-gray-500">Total emails</span>
                   <span className="text-sm font-semibold text-gray-800">{totalEmails.toLocaleString()}</span>
                 </div>
                 <div className="flex items-center justify-between pb-2 border-b border-gray-100">
-                  <span className="text-sm text-gray-500">Sent vs Received Ratio</span>
-                  <span className="text-sm font-semibold text-gray-800">{stats.totalSent}:{stats.totalReceived}</span>
+                  <span className="text-sm text-gray-500">Sent vs Received</span>
+                  <span className="text-sm font-semibold text-gray-800">{stats.totalSent} : {stats.totalReceived}</span>
                 </div>
                 <div className="flex items-center justify-between pb-2 border-b border-gray-100">
-                  <span className="text-sm text-gray-500">Read Rate</span>
+                  <span className="text-sm text-gray-500">Read rate</span>
                   <div className="flex items-center space-x-3">
                     <div className="w-32 h-2 bg-gray-200 rounded-full overflow-hidden">
                       <div className={`h-full rounded-full ${readRate > 50 ? 'bg-green-500' : 'bg-yellow-500'}`} style={{ width: `${readRate}%` }} />
@@ -272,15 +271,15 @@ const Stats = () => {
                   </div>
                 </div>
                 <div className="flex items-center justify-between pb-2 border-b border-gray-100">
-                  <span className="text-sm text-gray-500">Active Domains</span>
+                  <span className="text-sm text-gray-500">Active domains</span>
                   <span className="text-sm font-semibold text-gray-800">{stats.domainsCount}</span>
                 </div>
                 <div className="flex items-center justify-between pb-2 border-b border-gray-100">
-                  <span className="text-sm text-gray-500">Custom Email Addresses</span>
+                  <span className="text-sm text-gray-500">Custom emails</span>
                   <span className="text-sm font-semibold text-gray-800">{stats.customEmailsCount}</span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-gray-500">Starred Emails</span>
+                  <span className="text-sm text-gray-500">Starred emails</span>
                   <span className="text-sm font-semibold text-gray-800">{stats.starred}</span>
                 </div>
               </div>
@@ -326,9 +325,8 @@ const Stats = () => {
             </div>
           </div>
 
-          {/* Note */}
-          <div className="mt-6 p-4 bg-yellow-50 rounded-xl border border-yellow-100">
-            <p className="text-sm text-yellow-700">More detailed statistics (charts, email trends, domain analytics) will be available in a future update.</p>
+          <div className="mt-6 p-4 bg-purple-50 rounded-xl border border-purple-100">
+            <p className="text-sm text-purple-700">These are your personal statistics. Admin‑level stats are available in the admin dashboard.</p>
           </div>
         </div>
       </div>

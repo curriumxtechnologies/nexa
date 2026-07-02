@@ -23,6 +23,10 @@ const Register = () => {
   const [profilePicture, setProfilePicture] = useState(null);
   const [profilePreview, setProfilePreview] = useState(null);
 
+  // Modal states
+  const [showTermsModal, setShowTermsModal] = useState(false);
+  const [showPrivacyModal, setShowPrivacyModal] = useState(false);
+
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
     setFormData({
@@ -94,11 +98,15 @@ const Register = () => {
     }
   };
 
+  const openTerms = () => setShowTermsModal(true);
+  const closeTerms = () => setShowTermsModal(false);
+  const openPrivacy = () => setShowPrivacyModal(true);
+  const closePrivacy = () => setShowPrivacyModal(false);
+
   return (
     <div className="flex h-screen overflow-hidden bg-purple-50">
-      {/* Left Section - Writeup with Background Image */}
+      {/* Left Section - unchanged */}
       <div className="hidden lg:flex lg:w-1/2 relative overflow-hidden">
-        {/* Background Image */}
         <div 
           className="absolute inset-0 bg-cover bg-center bg-no-repeat"
           style={{
@@ -107,11 +115,9 @@ const Register = () => {
             backgroundPosition: 'center',
           }}
         >
-          {/* Overlay */}
           <div className="absolute inset-0 bg-gradient-to-br from-purple-900/90 to-purple-800/80" />
         </div>
         
-        {/* Content */}
         <div className="relative z-10 flex flex-col justify-between h-full w-full px-12 lg:px-16 xl:px-20 py-12 text-white">
           <div>
             <img 
@@ -171,7 +177,6 @@ const Register = () => {
       <div className="flex-1 flex flex-col bg-white overflow-hidden">
         <div className="flex-1 overflow-y-auto px-6 py-8 lg:px-8">
           <div className="max-w-md mx-auto">
-            {/* Mobile Logo */}
             <div className="lg:hidden flex justify-center mb-8">
               <img src="/nexa-logo.png" alt="Nexa Logo" className="h-10 w-auto" />
             </div>
@@ -380,7 +385,6 @@ const Register = () => {
                   </label>
                 </div>
 
-                {/* Submit Button */}
                 <button
                   type="submit"
                   disabled={isLoading}
@@ -411,18 +415,152 @@ const Register = () => {
 
               <div className="mt-4 text-center text-xs text-gray-400 pb-4">
                 By signing up, you agree to our{' '}
-                <Link to="/terms" className="text-purple-500 hover:text-purple-600">
+                <button
+                  type="button"
+                  onClick={openTerms}
+                  className="text-purple-500 hover:text-purple-600 underline-offset-2 hover:underline focus:outline-none"
+                >
                   Terms of Service
-                </Link>{' '}
+                </button>{' '}
                 and{' '}
-                <Link to="/privacy" className="text-purple-500 hover:text-purple-600">
+                <button
+                  type="button"
+                  onClick={openPrivacy}
+                  className="text-purple-500 hover:text-purple-600 underline-offset-2 hover:underline focus:outline-none"
+                >
                   Privacy Policy
-                </Link>
+                </button>
               </div>
             </div>
           </div>
         </div>
       </div>
+
+      {/* ===== TERMS OF SERVICE MODAL ===== */}
+      {showTermsModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl p-6 relative max-h-[90vh] flex flex-col">
+            <button
+              onClick={closeTerms}
+              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition"
+            >
+              <X className="h-6 w-6" />
+            </button>
+
+            <div className="mb-4">
+              <h3 className="text-2xl font-bold text-purple-800">Terms of Service</h3>
+              <p className="text-sm text-gray-500">Last updated: January 2026</p>
+            </div>
+
+            <div className="flex-1 overflow-y-auto pr-2 space-y-4 text-gray-700 text-sm leading-relaxed">
+              <p>
+                <strong>1. Acceptance of Terms</strong><br />
+                By using Nexa, you agree to these Terms. If you don't agree, please don't use our service.
+              </p>
+              <p>
+                <strong>2. Description of Service</strong><br />
+                Nexa provides email sending services via API. You may send emails through your custom domains.
+              </p>
+              <p>
+                <strong>3. User Accounts</strong><br />
+                You are responsible for your account credentials and all activities under your account.
+              </p>
+              <p>
+                <strong>4. Acceptable Use</strong><br />
+                You agree not to send spam, illegal content, or harmful material. We reserve the right to suspend accounts that violate this policy.
+              </p>
+              <p>
+                <strong>5. Privacy</strong><br />
+                Your data is handled as described in our Privacy Policy.
+              </p>
+              <p>
+                <strong>6. Termination</strong><br />
+                We may terminate or suspend your account at any time for violations.
+              </p>
+              <p>
+                <strong>7. Changes to Terms</strong><br />
+                We may update these terms; we'll notify you of significant changes.
+              </p>
+              <p>
+                <strong>8. Contact</strong><br />
+                For questions, contact us at support@nexa.com.
+              </p>
+            </div>
+
+            <div className="mt-4 pt-4 border-t border-gray-200 flex justify-end">
+              <button
+                onClick={closeTerms}
+                className="px-6 py-2 bg-purple-600 hover:bg-purple-700 text-white font-semibold rounded-lg transition"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===== PRIVACY POLICY MODAL ===== */}
+      {showPrivacyModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl p-6 relative max-h-[90vh] flex flex-col">
+            <button
+              onClick={closePrivacy}
+              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition"
+            >
+              <X className="h-6 w-6" />
+            </button>
+
+            <div className="mb-4">
+              <h3 className="text-2xl font-bold text-purple-800">Privacy Policy</h3>
+              <p className="text-sm text-gray-500">Last updated: January 2026</p>
+            </div>
+
+            <div className="flex-1 overflow-y-auto pr-2 space-y-4 text-gray-700 text-sm leading-relaxed">
+              <p>
+                <strong>1. Information We Collect</strong><br />
+                We collect your name, email, phone number, and profile picture. We also collect usage data for analytics.
+              </p>
+              <p>
+                <strong>2. How We Use Your Information</strong><br />
+                To provide email services, improve our platform, and communicate with you.
+              </p>
+              <p>
+                <strong>3. Data Security</strong><br />
+                We use industry-standard encryption and security measures to protect your data.
+              </p>
+              <p>
+                <strong>4. Third-Party Sharing</strong><br />
+                We do not sell your data. We may share with service providers (e.g., email delivery partners) to operate our service.
+              </p>
+              <p>
+                <strong>5. Cookies</strong><br />
+                We use cookies to improve user experience. You can manage cookie preferences.
+              </p>
+              <p>
+                <strong>6. Your Rights</strong><br />
+                You can access, correct, or delete your personal data by contacting us.
+              </p>
+              <p>
+                <strong>7. Changes to Policy</strong><br />
+                We'll notify you of material changes.
+              </p>
+              <p>
+                <strong>8. Contact</strong><br />
+                Privacy questions: <a href="mailto:privacy@lovohcreate.com" className="text-purple-600 hover:underline">privacy@lovohcreate.com</a>
+              </p>
+            </div>
+
+            <div className="mt-4 pt-4 border-t border-gray-200 flex justify-end">
+              <button
+                onClick={closePrivacy}
+                className="px-6 py-2 bg-purple-600 hover:bg-purple-700 text-white font-semibold rounded-lg transition"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

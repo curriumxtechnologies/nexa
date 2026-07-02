@@ -1,6 +1,6 @@
 // components/AppUpdateChecker.jsx
 import React, { useEffect, useState } from 'react';
-import { useCheckAppUpdateQuery } from '../slices/appApiSlice';
+import { useCheckAppUpdateQuery, getAppDownloadUrl } from '../slices/appApiSlice';
 import { 
   Download, 
   X, 
@@ -14,23 +14,22 @@ const AppUpdateChecker = () => {
   const [isVisible, setIsVisible] = useState(false);
   const [currentVersion, setCurrentVersion] = useState(null);
   const [isLoadingVersion, setIsLoadingVersion] = useState(true);
+  const [isNative, setIsNative] = useState(false);
 
-  // Try to get app version from Capacitor (if available)
+  // Only relevant inside the installed native app — a web browser
+  // visitor has no APK version to compare against, so this never
+  // needs to run or show anything for them.
   useEffect(() => {
     const getAppVersion = async () => {
       try {
-        // Check if running in Capacitor
         if (window.Capacitor?.isNativePlatform()) {
+          setIsNative(true);
           const { Device } = await import('@capacitor/device');
           const info = await Device.getInfo();
           setCurrentVersion(info.appVersion);
-        } else {
-          // Web version - use package.json version or default
-          setCurrentVersion('1.0.0');
         }
       } catch (error) {
         console.error('Failed to get app version:', error);
-        setCurrentVersion('1.0.0');
       } finally {
         setIsLoadingVersion(false);
       }
@@ -41,7 +40,7 @@ const AppUpdateChecker = () => {
 
   const { data, isLoading, error } = useCheckAppUpdateQuery(
     { platform: 'android', currentVersion },
-    { skip: !currentVersion }
+    { skip: !isNative || !currentVersion }
   );
 
   useEffect(() => {
@@ -52,9 +51,25 @@ const AppUpdateChecker = () => {
   }, [data, isLoading, isLoadingVersion]);
 
   const handleUpdateNow = () => {
-    // Open official website for download
-    window.open('https://nexa.curriumx.online/download', '_blank');
-    setIsVisible(false);
+    const updateInfo = data?.data;
+
+    if (!updateInfo?._id) {
+      console.error('No version ID available — cannot build download link');
+      return;
+    }
+
+    const downloadUrl = getAppDownloadUrl(updateInfo._id);
+
+    // '_system' hands the URL to the device's actual browser (Chrome)
+    // instead of trying to load it inside the Capacitor webview —
+    // required for a real file download to start.
+    window.open(downloadUrl, '_system');
+
+    // Required updates keep re-prompting until the user is actually
+    // on the new version — only dismiss for optional ones.
+    if (!updateInfo?.isRequired) {
+      setIsVisible(false);
+    }
   };
 
   const handleDismiss = () => {
@@ -70,7 +85,9 @@ const AppUpdateChecker = () => {
     }
   };
 
-  if (!isVisible || isLoading || isLoadingVersion) return null;
+  // Never renders on plain web (isNative stays false, query is skipped,
+  // isVisible never flips true) and never renders while still loading.
+  if (!isNative || !isVisible || isLoading || isLoadingVersion) return null;
 
   const updateInfo = data?.data;
   const isRequired = updateInfo?.isRequired;
@@ -184,8 +201,8 @@ const AppUpdateChecker = () => {
                       : 'bg-purple-600 text-white hover:bg-purple-700'
                   }`}
                 >
-                  <ExternalLink className="w-4 h-4" />
-                  <span>Download from Website</span>
+                  <Download className="w-4 h-4" />
+                  <span>Download Update</span>
                 </button>
                 {!isRequired && (
                   <button

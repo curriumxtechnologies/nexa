@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useGetUsersQuery, useAssignRoleMutation, useDeleteUserMutation } from '../slices/adminApiSlice';
+import { useGetUsersQuery, useDeleteUserMutation } from '../slices/adminApiSlice';
 import { 
   Users, 
   Search, 
@@ -7,33 +7,26 @@ import {
   RefreshCw, 
   Loader2, 
   AlertCircle,
-  CheckCircle,
   Crown,
   Shield,
   User,
   Mail,
   Calendar,
-  MoreVertical,
-  Edit2,
   Trash2,
   XCircle,
   ChevronLeft,
   ChevronRight,
   UserCheck,
-  UserX,
-  Clock
+  UserX
 } from 'lucide-react';
-import { formatDistanceToNow, format } from 'date-fns';
+import { format, formatDistanceToNow } from 'date-fns';
 import { toast } from 'react-hot-toast';
 
 const AdminUsers = () => {
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState('');
-  const [showRoleModal, setShowRoleModal] = useState(null);
-  const [selectedRole, setSelectedRole] = useState('');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(null);
-  const [showMobileMenu, setShowMobileMenu] = useState(null);
   const limit = 20;
 
   const { data, isLoading, error, refetch } = useGetUsersQuery({
@@ -42,29 +35,11 @@ const AdminUsers = () => {
     search,
     role: roleFilter
   });
-  const [assignRole, { isLoading: isAssigning }] = useAssignRoleMutation();
   const [deleteUser, { isLoading: isDeleting }] = useDeleteUserMutation();
 
   const users = data?.data?.users || [];
   const total = data?.data?.total || 0;
   const totalPages = data?.data?.totalPages || 0;
-
-  const handleAssignRole = async (userId) => {
-    if (!selectedRole) {
-      toast.error('Please select a role');
-      return;
-    }
-    
-    try {
-      await assignRole({ userId, role: selectedRole }).unwrap();
-      toast.success('Role assigned successfully');
-      setShowRoleModal(null);
-      setSelectedRole('');
-      refetch();
-    } catch (err) {
-      toast.error(err.data?.message || 'Failed to assign role');
-    }
-  };
 
   const handleDeleteUser = async (userId) => {
     try {
@@ -174,7 +149,7 @@ const AdminUsers = () => {
               </div>
               <div>
                 <h1 className="text-lg font-semibold text-gray-800">User Management</h1>
-                <p className="text-xs text-gray-400 hidden lg:block">Manage all users and their roles</p>
+                <p className="text-xs text-gray-400 hidden lg:block">View all users</p>
               </div>
             </div>
             <button
@@ -227,7 +202,6 @@ const AdminUsers = () => {
                 <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">User</th>
                 <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Role</th>
                 <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Joined</th>
-                <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Last Active</th>
                 <th className="text-right px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Actions</th>
               </tr>
             </thead>
@@ -264,34 +238,14 @@ const AdminUsers = () => {
                       </span>
                     </div>
                   </td>
-                  <td className="px-6 py-3">
-                    <div className="flex items-center space-x-1">
-                      <Clock className="w-3.5 h-3.5 text-gray-400" />
-                      <span className="text-xs text-gray-600">
-                        {user.lastLoginAt 
-                          ? formatDistanceToNow(new Date(user.lastLoginAt), { addSuffix: true })
-                          : 'Never'
-                        }
-                      </span>
-                    </div>
-                  </td>
                   <td className="px-6 py-3 text-right">
-                    <div className="flex items-center justify-end space-x-2">
-                      <button
-                        onClick={() => setShowRoleModal(user)}
-                        className="p-1.5 text-gray-400 hover:text-purple-600 transition rounded-lg"
-                        title="Change Role"
-                      >
-                        <Edit2 className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => setShowDeleteConfirm(user)}
-                        className="p-1.5 text-gray-400 hover:text-red-600 transition rounded-lg"
-                        title="Delete User"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
+                    <button
+                      onClick={() => setShowDeleteConfirm(user)}
+                      className="p-1.5 text-gray-400 hover:text-red-600 transition rounded-lg"
+                      title="Delete User"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
                   </td>
                 </tr>
               ))}
@@ -303,7 +257,7 @@ const AdminUsers = () => {
         <div className="lg:hidden space-y-3">
           {users.map((user) => (
             <div key={user._id} className="bg-white rounded-xl border border-gray-100 p-4">
-              <div className="flex items-start justify-between">
+              <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-3">
                   {user.profilePicture?.url ? (
                     <img
@@ -322,38 +276,13 @@ const AdminUsers = () => {
                   </div>
                 </div>
                 <button
-                  onClick={() => setShowMobileMenu(showMobileMenu === user._id ? null : user._id)}
-                  className="p-1.5 text-gray-400 hover:bg-gray-100 rounded-lg"
+                  onClick={() => setShowDeleteConfirm(user)}
+                  className="p-1.5 text-gray-400 hover:text-red-600 transition rounded-lg"
+                  title="Delete User"
                 >
-                  <MoreVertical className="w-4 h-4" />
+                  <Trash2 className="w-4 h-4" />
                 </button>
               </div>
-
-              {/* Mobile Actions Dropdown */}
-              {showMobileMenu === user._id && (
-                <div className="mt-3 pt-3 border-t border-gray-100 flex items-center justify-end space-x-2">
-                  <button
-                    onClick={() => {
-                      setShowRoleModal(user);
-                      setShowMobileMenu(null);
-                    }}
-                    className="flex items-center space-x-1 px-3 py-1.5 text-purple-600 bg-purple-50 rounded-lg text-xs"
-                  >
-                    <Edit2 className="w-3 h-3" />
-                    <span>Change Role</span>
-                  </button>
-                  <button
-                    onClick={() => {
-                      setShowDeleteConfirm(user);
-                      setShowMobileMenu(null);
-                    }}
-                    className="flex items-center space-x-1 px-3 py-1.5 text-red-600 bg-red-50 rounded-lg text-xs"
-                  >
-                    <Trash2 className="w-3 h-3" />
-                    <span>Delete</span>
-                  </button>
-                </div>
-              )}
 
               <div className="mt-3 pt-3 border-t border-gray-100 space-y-2">
                 <div className="flex items-center justify-between">
@@ -364,15 +293,6 @@ const AdminUsers = () => {
                   <span className="text-xs text-gray-500">Joined</span>
                   <span className="text-xs text-gray-600">
                     {format(new Date(user.createdAt), 'MMM d, yyyy')}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-gray-500">Last Active</span>
-                  <span className="text-xs text-gray-600">
-                    {user.lastLoginAt 
-                      ? formatDistanceToNow(new Date(user.lastLoginAt), { addSuffix: true })
-                      : 'Never'
-                    }
                   </span>
                 </div>
               </div>
@@ -418,95 +338,6 @@ const AdminUsers = () => {
           </div>
         )}
       </div>
-
-      {/* Change Role Modal */}
-      {showRoleModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-xl max-w-md w-full">
-            <div className="p-5">
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center space-x-2">
-                  <div className="p-1.5 bg-purple-50 rounded-lg">
-                    <Edit2 className="w-4 h-4 text-purple-600" />
-                  </div>
-                  <h2 className="text-lg font-semibold text-gray-800">Change Role</h2>
-                </div>
-                <button
-                  onClick={() => {
-                    setShowRoleModal(null);
-                    setSelectedRole('');
-                  }}
-                  className="text-gray-400 hover:text-gray-600"
-                >
-                  <XCircle className="w-5 h-5" />
-                </button>
-              </div>
-
-              <div className="space-y-4">
-                <div className="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg">
-                  {showRoleModal.profilePicture?.url ? (
-                    <img
-                      src={showRoleModal.profilePicture.url}
-                      alt={showRoleModal.name}
-                      className="w-10 h-10 rounded-full object-cover"
-                    />
-                  ) : (
-                    <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-medium ${getAvatarColor(showRoleModal.email)}`}>
-                      {getInitials(showRoleModal.name, showRoleModal.email)}
-                    </div>
-                  )}
-                  <div>
-                    <p className="font-medium text-gray-800 text-sm">{showRoleModal.name || 'No name'}</p>
-                    <p className="text-xs text-gray-400">{showRoleModal.email}</p>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Select New Role
-                  </label>
-                  <select
-                    value={selectedRole}
-                    onChange={(e) => setSelectedRole(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-400 focus:border-transparent outline-none text-sm"
-                  >
-                    <option value="">Select a role</option>
-                    <option value="user">👤 User - Regular access</option>
-                    <option value="admin">🛡️ Admin - Admin privileges</option>
-                    <option value="super_admin">👑 Super Admin - Full control</option>
-                  </select>
-                </div>
-
-                <div className="p-3 bg-yellow-50 rounded-lg">
-                  <p className="text-xs text-yellow-700">
-                    <strong>Note:</strong> Changing a user's role will immediately affect their permissions.
-                    Super Admins have full system access including role management.
-                  </p>
-                </div>
-
-                <div className="flex items-center space-x-3 pt-2">
-                  <button
-                    onClick={() => {
-                      setShowRoleModal(null);
-                      setSelectedRole('');
-                    }}
-                    className="flex-1 px-4 py-2 border border-gray-200 text-gray-700 text-sm rounded-lg hover:bg-gray-50 transition"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={() => handleAssignRole(showRoleModal._id)}
-                    disabled={isAssigning || !selectedRole}
-                    className="flex-1 px-4 py-2 bg-purple-600 text-white text-sm rounded-lg hover:bg-purple-700 transition disabled:opacity-50"
-                  >
-                    {isAssigning ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'Change Role'}
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Delete Confirmation Modal */}
       {showDeleteConfirm && (

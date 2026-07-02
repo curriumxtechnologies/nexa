@@ -14,60 +14,113 @@ const generateOTP = () => {
 };
 
 // Register user
+// Register user
 const register = async (req, res) => {
   try {
     const { email, password, name, phoneNumber, enable2FA = false } = req.body;
 
-    // Check if user already exists
+    // Find existing user
     const existingUser = await User.findOne({ email });
-    if (existingUser) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'User already exists with this email' 
+
+    // If user exists and is verified, reject registration
+    if (existingUser && existingUser.isEmailVerified) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email already registered and verified.'
       });
     }
 
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Generate OTP for email verification
+    // Generate OTP
     const otp = generateOTP();
     const otpExpiry = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
-    // Create new user (Cloudinary URL comes from multer)
-    const user = new User({
-      name,
-      email,
-      password: hashedPassword,
-      phoneNumber,
-      isTwoFactorEnabled: enable2FA,
-      otp: {
-        code: otp,
-        expiresAt: otpExpiry
-      },
-      isEmailVerified: false,
-      profilePicture: req.file ? {
-        url: req.file.path, // Cloudinary URL
-        publicId: req.file.filename, // Cloudinary public ID
-        fileName: req.file.originalname,
-        fileSize: req.file.size,
-        mimeType: req.file.mimetype
-      } : {
-        url: null,
-        publicId: null,
-        fileName: null,
-        fileSize: null,
-        mimeType: null
-      }
-    });
+    let user;
+    let isNewUser = false;
+    let oldProfilePicture = null;     // to restore on rollback
+    let oldUserData = null;          // for full rollback of unverified user
 
+    if (existingUser) {
+      // ------------------------------------------------------------
+      // CASE: Unverified user exists → override with new data
+      // ------------------------------------------------------------
+      oldUserData = { ...existingUser._doc };   // shallow copy for rollback
+      oldProfilePicture = existingUser.profilePicture
+        ? { ...existingUser.profilePicture }
+        : null;
+
+      // Update fields
+      existingUser.name = name;
+      existingUser.password = hashedPassword;
+      existingUser.phoneNumber = phoneNumber;
+      existingUser.isTwoFactorEnabled = enable2FA;
+      existingUser.otp = { code: otp, expiresAt: otpExpiry };
+      existingUser.isEmailVerified = false;     // ensure false (should already be)
+
+      // Clear any leftover 2FA / reset OTPs
+      existingUser.twoFactorOTP = { code: null, expiresAt: null };
+      existingUser.resetPasswordOTP = { code: null, expiresAt: null };
+
+      // Handle profile picture
+      if (req.file) {
+        // New picture uploaded → we'll delete old one after email success
+        existingUser.profilePicture = {
+          url: req.file.path,
+          publicId: req.file.filename,
+          fileName: req.file.originalname,
+          fileSize: req.file.size,
+          mimeType: req.file.mimetype
+        };
+        // (old picture deletion deferred until email is sent successfully)
+      } else {
+        // Keep existing profile picture (no change)
+        // existingUser.profilePicture remains as is
+      }
+
+      user = existingUser;
+    } else {
+      // ------------------------------------------------------------
+      // CASE: Completely new user
+      // ------------------------------------------------------------
+      isNewUser = true;
+      const newUser = new User({
+        name,
+        email,
+        password: hashedPassword,
+        phoneNumber,
+        isTwoFactorEnabled: enable2FA,
+        otp: { code: otp, expiresAt: otpExpiry },
+        isEmailVerified: false,
+        profilePicture: req.file ? {
+          url: req.file.path,
+          publicId: req.file.filename,
+          fileName: req.file.originalname,
+          fileSize: req.file.size,
+          mimeType: req.file.mimetype
+        } : {
+          url: null,
+          publicId: null,
+          fileName: null,
+          fileSize: null,
+          mimeType: null
+        }
+      });
+      user = newUser;
+    }
+
+    // Save the user
     await user.save();
 
-    // Send OTP via email
+    // Send OTP email
     const emailResult = await sendVerificationOTP(email, name, otp);
-    
+
+    // ------------------------------------------------------------
+    // If email sending fails → rollback everything
+    // ------------------------------------------------------------
     if (!emailResult.success) {
-      // Delete uploaded profile picture from Cloudinary if email fails
+      // Delete the newly uploaded picture (if any)
       if (req.file && req.file.filename) {
         const cloudinary = (await import('cloudinary')).v2;
         cloudinary.config({
@@ -77,8 +130,16 @@ const register = async (req, res) => {
         });
         await cloudinary.uploader.destroy(req.file.filename);
       }
-      // Delete the user
-      await User.findByIdAndDelete(user._id);
+
+      if (isNewUser) {
+        // Delete the newly created user
+        await User.findByIdAndDelete(user._id);
+      } else {
+        // Revert unverified user to previous state
+        const { _id, __v, ...updateData } = oldUserData;
+        await User.findByIdAndUpdate(user._id, updateData);
+      }
+
       return res.status(500).json({
         success: false,
         message: 'Failed to send verification email',
@@ -86,6 +147,23 @@ const register = async (req, res) => {
       });
     }
 
+    // ------------------------------------------------------------
+    // Email sent successfully → finalize
+    // ------------------------------------------------------------
+    // If we replaced an old profile picture, delete it now
+    if (existingUser && req.file && oldProfilePicture && oldProfilePicture.publicId) {
+      const cloudinary = (await import('cloudinary')).v2;
+      cloudinary.config({
+        cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+        api_key: process.env.CLOUDINARY_API_KEY,
+        api_secret: process.env.CLOUDINARY_API_SECRET,
+      });
+      // Fire-and-forget (but we await to catch errors)
+      await cloudinary.uploader.destroy(oldProfilePicture.publicId)
+        .catch(err => console.error('Failed to delete old profile picture:', err));
+    }
+
+    // Success response
     res.status(201).json({
       success: true,
       message: 'Registration successful! Please verify your email with the OTP sent.',
@@ -98,10 +176,12 @@ const register = async (req, res) => {
 
   } catch (error) {
     console.error('Registration error:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Error during registration', 
-      error: error.message 
+    // If an unexpected error occurs after we've saved but before we could clean up,
+    // we might have inconsistencies. However, the main flows are covered above.
+    res.status(500).json({
+      success: false,
+      message: 'Error during registration',
+      error: error.message
     });
   }
 };
