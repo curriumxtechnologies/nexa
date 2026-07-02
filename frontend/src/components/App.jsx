@@ -134,10 +134,15 @@ const App = () => {
   };
 
   const handleShare = async (version) => {
+    // Get the current base URL from the browser
+    const baseUrl = window.location.origin;
+    // Construct the frontend URL for the download page
+    const shareUrl = `${baseUrl}/app/download/${version._id}`;
+    
     const shareData = {
       title: 'Nexa App',
       text: `Download Nexa v${version.version} - ${version.releaseNotes || 'Latest update'}`,
-      url: getAppDownloadUrl(version._id, token)
+      url: shareUrl
     };
 
     try {
@@ -145,7 +150,7 @@ const App = () => {
         await navigator.share(shareData);
       } else {
         // Fallback: copy to clipboard
-        await navigator.clipboard.writeText(shareData.url);
+        await navigator.clipboard.writeText(shareUrl);
         setCopied(true);
         setTimeout(() => setCopied(false), 3000);
       }
@@ -154,7 +159,7 @@ const App = () => {
         console.error('Share failed:', error);
         // Fallback to clipboard
         try {
-          await navigator.clipboard.writeText(shareData.url);
+          await navigator.clipboard.writeText(shareUrl);
           setCopied(true);
           setTimeout(() => setCopied(false), 3000);
         } catch (clipError) {
