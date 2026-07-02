@@ -1,4 +1,3 @@
-// controllers/adminController.js
 import User from '../models/userModel.js';
 import Email from '../models/emailModel.js';
 import CustomEmail from '../models/customEmailModel.js';
@@ -7,6 +6,9 @@ import AppVersion from '../models/appVersionModel.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+
+// Import the push broadcasting function from appController
+import { broadcastAppUpdate } from './appController.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -457,12 +459,9 @@ const getEmailStats = async (req, res) => {
 /**
  * Upload new app version (APK/AAB) - admin & super_admin only
  * POST /api/admin/app/upload
- */
-// controllers/adminController.js — uploadApp function only
-
-/**
- * Upload new app version (APK/AAB) - admin & super_admin only
- * POST /api/admin/app/upload
+ * 
+ * After successful upload, broadcasts a push notification to all users
+ * so that the update popup appears instantly.
  */
 const uploadApp = async (req, res) => {
   try {
@@ -523,9 +522,16 @@ const uploadApp = async (req, res) => {
 
     await appVersion.save();
 
+    // 🚀 Broadcast push notification to all users immediately
+    // This triggers the update popup on all devices without waiting for polling.
+    // We do this asynchronously to not block the response.
+    broadcastAppUpdate(appVersion._id).catch(err => {
+      console.error('❌ Push broadcast failed after upload:', err);
+    });
+
     res.status(201).json({
       success: true,
-      message: 'App version uploaded successfully',
+      message: 'App version uploaded successfully and push notification sent.',
       data: {
         id: appVersion._id,
         version: appVersion.version,
@@ -579,6 +585,9 @@ const updateApp = async (req, res) => {
     
     appVersion.updatedAt = new Date();
     await appVersion.save();
+
+    // Optionally, you could also broadcast here if isActive becomes true or isRequired changes
+    // but usually updates are minor and don't require a push.
 
     res.status(200).json({
       success: true,

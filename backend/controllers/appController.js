@@ -1,9 +1,119 @@
-// controllers/appController.js
 import AppVersion from '../models/appVersionModel.js';
 import User from '../models/userModel.js';
 import https from 'https';
 import jwt from 'jsonwebtoken';
-import axios from 'axios'; // Add this import
+import axios from 'axios';
+import admin from 'firebase-admin'; // Add Firebase Admin SDK
+
+// Initialize Firebase Admin (if not already initialized elsewhere)
+if (!admin.apps.length) {
+  admin.initializeApp({
+    credential: admin.credential.cert({
+      projectId: process.env.FIREBASE_PROJECT_ID,
+      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+      privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'),
+    }),
+  });
+}
+
+// ============= NEW: Push notification helper =============
+
+/**
+ * Send a push notification to all users with a valid FCM token
+ * @param {Object} versionData - { version, isRequired, releaseNotes, _id }
+ */
+const sendAppUpdatePushNotification = async (versionData) => {
+  try {
+    // Fetch all users that have push tokens
+    const users = await User.find({ 
+      pushTokens: { $exists: true, $ne: [] } 
+    }).select('pushTokens');
+
+    if (!users.length) {
+      console.log('📭 No users with push tokens found');
+      return;
+    }
+
+    // Flatten all tokens (assuming each user has an array of tokens)
+    const tokens = users.flatMap(user => user.pushTokens).filter(Boolean);
+
+    if (!tokens.length) {
+      console.log('📭 No valid push tokens found');
+      return;
+    }
+
+    const payload = {
+      data: {
+        type: 'APP_UPDATE',
+        version: versionData.version || '',
+        isRequired: String(versionData.isRequired || false),
+        versionId: versionData._id || '',
+        releaseNotes: versionData.releaseNotes || '',
+        timestamp: Date.now().toString(),
+      },
+      android: {
+        priority: 'high',
+        ttl: 3600 * 1000, // 1 hour
+      },
+      apns: {
+        headers: {
+          'apns-priority': '10',
+        },
+        payload: {
+          aps: {
+            'content-available': 1,
+            sound: 'default',
+          },
+        },
+      },
+      tokens: tokens,
+    };
+
+    // Send multicast
+    const response = await admin.messaging().sendEachForMulticast(payload);
+    console.log(`📨 Push sent: ${response.successCount} succeeded, ${response.failureCount} failed`);
+
+    // Log failures for debugging
+    if (response.failureCount > 0) {
+      const failedTokens = [];
+      response.responses.forEach((resp, idx) => {
+        if (!resp.success) {
+          failedTokens.push(tokens[idx]);
+          console.error(`❌ Push failure for token ${tokens[idx]}:`, resp.error);
+        }
+      });
+      // Optionally clean up invalid tokens from the database
+      // (you can implement a cleanup function here)
+    }
+  } catch (error) {
+    console.error('❌ Failed to send push notification:', error);
+  }
+};
+
+/**
+ * Broadcast an app update to all users (to be called after a new version is uploaded)
+ * @param {string} versionId - The ID of the new version
+ */
+const broadcastAppUpdate = async (versionId) => {
+  try {
+    const version = await AppVersion.findById(versionId);
+    if (!version) {
+      console.error(`❌ Version ${versionId} not found for push broadcast`);
+      return;
+    }
+
+    await sendAppUpdatePushNotification({
+      _id: version._id,
+      version: version.version,
+      isRequired: version.isRequired,
+      releaseNotes: version.releaseNotes,
+    });
+  } catch (error) {
+    console.error('❌ Error broadcasting app update:', error);
+  }
+};
+
+// ============= Existing endpoints =============
 
 /**
  * Get latest app version for updates
@@ -48,14 +158,21 @@ const getAppVersion = async (req, res) => {
       }
     }
 
-    // Check if update is needed
+    // Check if update is needed using semver (better comparison)
     let hasUpdate = false;
     let isRequired = false;
 
     if (userVersion) {
-      // Compare versions (simple string comparison)
-      hasUpdate = latestVersion.version !== userVersion;
-      isRequired = latestVersion.isRequired && hasUpdate;
+      try {
+        // Use semver for robust comparison
+        const semver = await import('semver');
+        hasUpdate = semver.gt(latestVersion.version, userVersion);
+        isRequired = latestVersion.isRequired && hasUpdate;
+      } catch {
+        // Fallback to simple string comparison if semver not available
+        hasUpdate = latestVersion.version !== userVersion;
+        isRequired = latestVersion.isRequired && hasUpdate;
+      }
     } else {
       // If no version provided, assume update is needed
       hasUpdate = true;
@@ -87,14 +204,6 @@ const getAppVersion = async (req, res) => {
     });
   }
 };
-
-/**
- * Download the APK/AAB file and update user's version
- * GET /api/app/download/:versionId
- * Public route - uses token from query params if available
- */
-// controllers/appController.js
-
 
 /**
  * Download the APK/AAB file and update user's version
@@ -151,7 +260,7 @@ const downloadApp = async (req, res) => {
       res.setHeader('Content-Length', appVersion.fileSize);
     }
 
-    // Use axios or node-fetch to handle the file download better
+    // Use axios to handle the file download better
     const response = await axios({
       method: 'get',
       url: appVersion.fileUrl,
@@ -287,17 +396,27 @@ const updateUserAppVersion = async (req, res) => {
       let isRequired = false;
       let updateInfo = null;
 
-      if (latestVersion && latestVersion.version !== version) {
-        needsUpdate = true;
-        isRequired = latestVersion.isRequired || false;
-        updateInfo = {
-          _id: latestVersion._id,
-          version: latestVersion.version,
-          releaseNotes: latestVersion.releaseNotes,
-          fileSize: latestVersion.fileSize,
-          fileName: latestVersion.fileName,
-          isRequired: latestVersion.isRequired
-        };
+      if (latestVersion) {
+        // Compare using semver if available
+        let hasUpdate = false;
+        try {
+          const semver = await import('semver');
+          hasUpdate = semver.gt(latestVersion.version, version);
+        } catch {
+          hasUpdate = latestVersion.version !== version;
+        }
+        if (hasUpdate) {
+          needsUpdate = true;
+          isRequired = latestVersion.isRequired || false;
+          updateInfo = {
+            _id: latestVersion._id,
+            version: latestVersion.version,
+            releaseNotes: latestVersion.releaseNotes,
+            fileSize: latestVersion.fileSize,
+            fileName: latestVersion.fileName,
+            isRequired: latestVersion.isRequired
+          };
+        }
       }
 
       res.status(200).json({
@@ -379,8 +498,17 @@ const verifyAndUpdateVersionOnLogin = async (userId, deviceVersion) => {
     }
 
     // Check if update is needed against latest version
-    if (latestVersion && versionToSave && latestVersion.version !== versionToSave) {
-      needsUpdate = true;
+    if (latestVersion && versionToSave) {
+      let hasUpdate = false;
+      try {
+        const semver = await import('semver');
+        hasUpdate = semver.gt(latestVersion.version, versionToSave);
+      } catch {
+        hasUpdate = latestVersion.version !== versionToSave;
+      }
+      if (hasUpdate) {
+        needsUpdate = true;
+      }
     }
 
     return {
@@ -404,5 +532,8 @@ export {
   getAppVersionById,
   downloadApp,
   updateUserAppVersion,
-  verifyAndUpdateVersionOnLogin // Export for auth controller
+  verifyAndUpdateVersionOnLogin,
+  // Export the push broadcasting function
+  broadcastAppUpdate,
+  sendAppUpdatePushNotification, // optional, for testing
 };

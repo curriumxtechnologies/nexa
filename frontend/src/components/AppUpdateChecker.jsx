@@ -1,13 +1,19 @@
-// components/AppUpdateChecker.jsx
 import React, { useEffect, useState } from 'react';
 import { useCheckAppUpdateQuery, getAppDownloadUrl, useUpdateUserAppVersionMutation } from '../slices/appApiSlice';
 import { useSelector } from 'react-redux';
+import { App as CapacitorApp } from '@capacitor/app';
+import { PushNotifications } from '@capacitor/push-notifications'; // 👈 for listening to pushes
 import { 
   Download, 
   X, 
   AlertCircle,
   Loader2
 } from 'lucide-react';
+import { useMobilePushNotifications } from '../hooks/useMobilePushNotifications'; // 👈 your hook
+
+// Optional: use semver for robust comparison
+// npm install semver
+// import * as semver from 'semver';
 
 const AppUpdateChecker = () => {
   const [isVisible, setIsVisible] = useState(false);
@@ -18,11 +24,13 @@ const AppUpdateChecker = () => {
   const [versionVerified, setVersionVerified] = useState(false);
   const [updateFromLogin, setUpdateFromLogin] = useState(null);
   
-  // ✅ All hooks at the top level
   const { user, token, appUpdate } = useSelector((state) => state.auth);
   const [updateUserVersion] = useUpdateUserAppVersionMutation();
 
-  // ✅ Check for update from login response (using the appUpdate from Redux)
+  // Hook to check if push is supported (we need it for isSupported)
+  const { isSupported } = useMobilePushNotifications();
+
+  // --- 1. Check for update from login response ---
   useEffect(() => {
     if (appUpdate?.hasUpdate) {
       console.log('📱 Update from login response:', appUpdate);
@@ -31,11 +39,10 @@ const AppUpdateChecker = () => {
     }
   }, [appUpdate]);
 
-  // Get device version and verify on startup
+  // --- 2. Get device version and verify on startup ---
   useEffect(() => {
     const getAppVersion = async () => {
       try {
-        // Check if we're in a native environment
         const isNativePlatform = window.Capacitor?.isNativePlatform();
         setIsNative(!!isNativePlatform);
         
@@ -43,25 +50,18 @@ const AppUpdateChecker = () => {
           const { Device } = await import('@capacitor/device');
           const info = await Device.getInfo();
           
-          // Get version from multiple sources
           let version = info.appVersion;
           
-          // 1. First priority: user from Redux (database)
           if (user?.appVersion) {
             version = user.appVersion;
             setVersionVerified(true);
-          } 
-          // 2. Second priority: localStorage (fallback)
-          else {
+          } else {
             const storedVersion = localStorage.getItem('appVersion');
-            if (storedVersion) {
-              version = storedVersion;
-            }
+            if (storedVersion) version = storedVersion;
           }
           
           setCurrentVersion(version);
 
-          // Verify version with backend on app start
           if (token && version) {
             try {
               const result = await updateUserVersion({
@@ -88,7 +88,6 @@ const AppUpdateChecker = () => {
             setVersionVerified(true);
           }
         } else {
-          // Not native - still set as verified so we don't block
           setVersionVerified(true);
         }
       } catch (error) {
@@ -102,8 +101,8 @@ const AppUpdateChecker = () => {
     getAppVersion();
   }, [user?.appVersion, token, updateUserVersion]);
 
-  // Query for periodic updates
-  const { data, isLoading, error } = useCheckAppUpdateQuery(
+  // --- 3. Query for periodic updates (shorter poll: 2 minutes) ---
+  const { data, isLoading, error, refetch } = useCheckAppUpdateQuery(
     { 
       platform: 'android', 
       currentVersion,
@@ -111,15 +110,72 @@ const AppUpdateChecker = () => {
     },
     { 
       skip: !isNative || isLoadingVersion || !versionVerified || !currentVersion,
-      pollingInterval: 3600000,
+      pollingInterval: 120000, // 2 minutes
     }
   );
 
-  // Handle update from API response
+  // --- 4. Real‑time push notification listener (directly from Capacitor) ---
+  useEffect(() => {
+    if (!isNative) return;
+
+    let pushListener;
+
+    const setupPushListener = async () => {
+      try {
+        pushListener = await PushNotifications.addListener(
+          'pushNotificationReceived',
+          (notification) => {
+            const data = notification?.data || notification?.payload || {};
+            console.log('📩 Push notification received:', data);
+            
+            if (data.type === 'APP_UPDATE') {
+              console.log('🔄 App update push received – refetching...');
+              refetch();
+            }
+          }
+        );
+        console.log('✅ Push notification listener registered');
+      } catch (err) {
+        console.error('❌ Failed to register push listener:', err);
+      }
+    };
+
+    setupPushListener();
+
+    return () => {
+      if (pushListener) {
+        pushListener.remove();
+        console.log('🗑️ Push listener removed');
+      }
+    };
+  }, [isNative, refetch]);
+
+  // --- 5. Resume listener (app comes to foreground) ---
+  useEffect(() => {
+    if (!isNative) return;
+
+    let listenerHandle;
+
+    const setupResumeListener = async () => {
+      listenerHandle = await CapacitorApp.addListener('appStateChange', ({ isActive }) => {
+        if (isActive) {
+          console.log('📱 App resumed – checking for updates');
+          refetch();
+        }
+      });
+    };
+
+    setupResumeListener();
+
+    return () => {
+      listenerHandle?.remove();
+    };
+  }, [isNative, refetch]);
+
+  // --- 6. Handle update from API response ---
   useEffect(() => {
     if (data?.data?.hasUpdate && !isLoading && !isLoadingVersion && versionVerified) {
       console.log('📱 Update from API check:', data.data);
-      // Only set if we don't already have an update from login
       if (!updateFromLogin?.hasUpdate) {
         setUpdateFromLogin(data.data);
         setIsVisible(true);
@@ -127,12 +183,11 @@ const AppUpdateChecker = () => {
     }
   }, [data, isLoading, isLoadingVersion, versionVerified, updateFromLogin]);
 
-  // Determine if we have an update (from login OR API)
+  // Determine if we have an update
   const hasUpdate = data?.data?.hasUpdate || updateFromLogin?.hasUpdate || false;
-  
-  // Get update info (prefer login response, fallback to API)
   const updateInfo = updateFromLogin?.hasUpdate ? updateFromLogin : data?.data;
 
+  // --- 7. Download handler ---
   const handleUpdateNow = async () => {
     if (!updateInfo?._id) {
       console.error('No version ID available');
@@ -182,10 +237,8 @@ const AppUpdateChecker = () => {
     }
   };
 
-  // Don't render on web or while loading
+  // --- Render condition ---
   if (!isNative || isLoading || isLoadingVersion || !versionVerified) return null;
-
-  // Only show if we have an update available
   if (!hasUpdate || !updateInfo) return null;
 
   const isRequired = updateInfo?.isRequired;
