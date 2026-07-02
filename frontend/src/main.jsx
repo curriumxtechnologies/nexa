@@ -29,6 +29,8 @@ import EmailDetails from "./screens/EmailDetails.jsx";
 import AcceptInvite from "./screens/AcceptInvite.jsx";
 import PrivateRoute from "./components/PrivateRoute.jsx";
 
+import AppDownload from "./screens/AppDownload.jsx";
+
 // Admin Routes
 import AdminUsers from "./screens/AdminUsers.jsx";
 import AdminAnalytics from "./screens/AdminAnalytics.jsx";
@@ -95,6 +97,7 @@ const router = createBrowserRouter([
       { path: "register", element: <Register /> },
       { path: "verify-email", element: <VerifyEmail /> },
       { path: "accept-invitation/:token", element: <AcceptInvite /> },
+      {path: "app/download/:versionId", element: <AppDownload />},
       // Protected routes wrapped with PrivateRoute
       {
         element: <PrivateRoute />,

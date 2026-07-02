@@ -73,6 +73,8 @@ const getAppVersion = async (req, res) => {
  * GET /api/app/download/:versionId
  * Public route - no authentication required
  */
+// controllers/appController.js — downloadApp function, just the fileName line
+
 const downloadApp = async (req, res) => {
   try {
     const { versionId } = req.params;
@@ -92,9 +94,9 @@ const downloadApp = async (req, res) => {
       });
     }
 
-    const fileName = appVersion.fileName?.endsWith('.apk')
-      ? appVersion.fileName
-      : `nexa-v${appVersion.version}.apk`;
+    // Always use a consistent branded filename, regardless of what
+    // the original uploaded file was named (e.g. "app-release.apk").
+    const fileName = `nexa-v${appVersion.version}.apk`;
 
     res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
     res.setHeader('Content-Type', 'application/vnd.android.package-archive');
@@ -138,7 +140,52 @@ const downloadApp = async (req, res) => {
   }
 };
 
+// controllers/appController.js — add this function + export
+
+/**
+ * Get details for a single app version, for public download landing pages.
+ * GET /api/app/version/:versionId
+ * Public route - no authentication required
+ */
+const getAppVersionById = async (req, res) => {
+  try {
+    const { versionId } = req.params;
+    const version = await AppVersion.findById(versionId);
+
+    if (!version || !version.isActive) {
+      return res.status(404).json({
+        success: false,
+        message: 'App version not found'
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      data: {
+        _id: version._id,
+        version: version.version,
+        releaseNotes: version.releaseNotes,
+        fileSize: version.fileSize,
+        fileName: version.fileName,
+        isRequired: version.isRequired,
+        platform: version.platform,
+        releasedAt: version.createdAt
+      }
+    });
+
+  } catch (error) {
+    console.error('Get app version by ID error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching app version',
+      error: error.message
+    });
+  }
+};
+
 export {
   getAppVersion,
+  getAppVersionById,
   downloadApp
 };
+
