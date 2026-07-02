@@ -38,7 +38,7 @@ const Header = () => {
                 <img 
                   src="/nexa-logo.png" 
                   alt="Nexa Logo" 
-                  className="h-8 w-auto object-contain transition-all duration-300 group-hover:scale-105 brightness-0 invert"
+                  className="h-6 w-auto object-contain transition-all duration-300 group-hover:scale-105 brightness-0 invert"
                 />
               </a>
 
