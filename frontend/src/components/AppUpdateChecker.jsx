@@ -11,10 +11,15 @@ import {
 } from 'lucide-react';
 import { useMobilePushNotifications } from '../hooks/useMobilePushNotifications';
 
-// Helper to normalize version strings (strip 'v' prefix)
+// Normalize version string to just major.minor.patch
+// Removes 'v' prefix, build metadata, and any suffixes
 const normalizeVersion = (v) => {
   if (!v) return '';
-  return v.replace(/^v/i, '').trim();
+  // Remove leading 'v' or 'V'
+  let str = v.replace(/^[vV]\s*/, '');
+  // Extract semantic version (major.minor.patch)
+  const match = str.match(/(\d+\.\d+\.\d+)/);
+  return match ? match[1] : str.trim();
 };
 
 const AppUpdateChecker = () => {
@@ -26,12 +31,13 @@ const AppUpdateChecker = () => {
   const [versionVerified, setVersionVerified] = useState(false);
   const [updateFromLogin, setUpdateFromLogin] = useState(null);
   const [isFirstLaunch, setIsFirstLaunch] = useState(false);
+  const [dismissedUntil, setDismissedUntil] = useState(null);
 
   const { user, token, appUpdate } = useSelector((state) => state.auth);
   const [updateUserVersion] = useUpdateUserAppVersionMutation();
   const { isSupported } = useMobilePushNotifications();
 
-  // ---- 1. Debug: log component state ----
+  // Debug logging
   useEffect(() => {
     console.log('🔍 AppUpdateChecker state:', {
       isNative,
@@ -42,20 +48,27 @@ const AppUpdateChecker = () => {
       hasUpdate: !!updateFromLogin?.hasUpdate,
       isVisible,
       isFirstLaunch,
+      dismissedUntil,
       updateInfo: updateFromLogin || null,
     });
-  }, [isNative, isLoadingVersion, versionVerified, currentVersion, token, updateFromLogin, isVisible, isFirstLaunch]);
+  }, [isNative, isLoadingVersion, versionVerified, currentVersion, token, updateFromLogin, isVisible, isFirstLaunch, dismissedUntil]);
 
-  // ---- 2. Check for update from login response ----
+  // Check for update from login response
   useEffect(() => {
-    if (appUpdate?.hasUpdate && !isFirstLaunch) {
-      console.log('📱 Update from login response:', appUpdate);
-      setUpdateFromLogin(appUpdate);
-      setIsVisible(true);
+    if (appUpdate?.hasUpdate && !isFirstLaunch && currentVersion) {
+      const updateVer = normalizeVersion(appUpdate.version);
+      const currentVer = normalizeVersion(currentVersion);
+      if (updateVer !== currentVer) {
+        console.log('📱 Update from login response:', appUpdate);
+        setUpdateFromLogin(appUpdate);
+        setIsVisible(true);
+      } else {
+        console.log('⏭️ Login update version matches current - ignoring');
+      }
     }
-  }, [appUpdate, isFirstLaunch]);
+  }, [appUpdate, isFirstLaunch, currentVersion]);
 
-  // ---- 3. Get device version on startup ----
+  // Get device version on startup
   useEffect(() => {
     const getAppVersion = async () => {
       try {
@@ -65,27 +78,27 @@ const AppUpdateChecker = () => {
         if (isNativePlatform) {
           const { Device } = await import('@capacitor/device');
           const info = await Device.getInfo();
-          const deviceVersion = info.appVersion;
-          const normDeviceVersion = normalizeVersion(deviceVersion);
+          const rawDeviceVersion = info.appVersion;
+          const normalizedDeviceVersion = normalizeVersion(rawDeviceVersion);
 
           // Check if this is first launch
           const storedVersion = localStorage.getItem('appVersion');
           
           if (!storedVersion) {
             // FIRST LAUNCH - Store version and exit
-            console.log('🆕 First launch detected! Version:', deviceVersion);
-            localStorage.setItem('appVersion', deviceVersion);
-            setCurrentVersion(normDeviceVersion);
+            console.log('🆕 First launch detected! Raw:', rawDeviceVersion, 'Normalized:', normalizedDeviceVersion);
+            localStorage.setItem('appVersion', normalizedDeviceVersion);
+            setCurrentVersion(normalizedDeviceVersion);
             setIsFirstLaunch(true);
             setVersionVerified(true);
             setIsLoadingVersion(false);
             
-            // If user is logged in, sync with backend
+            // Sync with backend if user is logged in
             if (token && user?.id) {
               try {
                 await updateUserVersion({
                   token,
-                  version: deviceVersion
+                  version: normalizedDeviceVersion
                 }).unwrap();
                 console.log('✅ Synced first launch version with backend');
               } catch (error) {
@@ -95,35 +108,52 @@ const AppUpdateChecker = () => {
             return; // EXIT - No update check for first launch
           }
 
-          // ---- EXISTING USER - Continue with update check ----
-          console.log('📱 Existing user - device version:', deviceVersion);
+          // ---- EXISTING USER ----
+          console.log('📱 Existing user - raw device version:', rawDeviceVersion);
+          console.log('📱 Normalized device version:', normalizedDeviceVersion);
+          console.log('📱 Stored version:', storedVersion);
+
+          // Use stored version as source of truth (already normalized)
+          let version = storedVersion;
           
-          let version = deviceVersion;
-          
-          // Prefer DB version if available
+          // If user has DB version and it's different from stored, use DB version
           if (user?.appVersion) {
-            version = user.appVersion;
+            const dbNorm = normalizeVersion(user.appVersion);
+            if (dbNorm !== normalizeVersion(storedVersion)) {
+              console.log('📱 DB version differs, using DB:', user.appVersion);
+              version = dbNorm;
+              localStorage.setItem('appVersion', version);
+            }
           }
 
-          const normVersion = normalizeVersion(version);
-          setCurrentVersion(normVersion);
+          setCurrentVersion(version);
           setVersionVerified(true);
 
-          if (token && normVersion) {
+          // Always sync with backend to ensure consistency
+          if (token && version) {
             try {
               const result = await updateUserVersion({
                 token,
-                version: normVersion
+                version: version
               }).unwrap();
               console.log('✅ Version verified on startup:', result);
 
+              // Only show update if versions are DIFFERENT
               if (result.data?.needsUpdate) {
-                console.log('📱 Update needed from startup check:', result.data.updateInfo);
-                setUpdateFromLogin({
-                  hasUpdate: true,
-                  ...result.data.updateInfo
-                });
-                setIsVisible(true);
+                const latestVersion = result.data?.updateInfo?.version;
+                if (latestVersion) {
+                  const normalizedLatest = normalizeVersion(latestVersion);
+                  if (normalizedLatest !== version) {
+                    console.log('📱 Update needed from startup check:', result.data.updateInfo);
+                    setUpdateFromLogin({
+                      hasUpdate: true,
+                      ...result.data.updateInfo
+                    });
+                    setIsVisible(true);
+                  } else {
+                    console.log('✅ Latest version matches current - no update needed');
+                  }
+                }
               }
             } catch (error) {
               console.error('❌ Version verification failed:', error);
@@ -143,7 +173,7 @@ const AppUpdateChecker = () => {
     getAppVersion();
   }, [user?.appVersion, token, updateUserVersion]);
 
-  // ---- 4. Polling query ----
+  // Polling query
   const queryVersion = currentVersion || '0.0.0';
   const { data, isLoading, error, refetch } = useCheckAppUpdateQuery(
     {
@@ -152,22 +182,24 @@ const AppUpdateChecker = () => {
       token: token || undefined,
     },
     {
-      skip: !isNative || isLoadingVersion || !versionVerified || isFirstLaunch,
+      skip: !isNative || isLoadingVersion || !versionVerified || isFirstLaunch || !currentVersion,
       pollingInterval: 120000,
     }
   );
 
-  // ---- 5. Debug: log API response ----
+  // Debug API response
   useEffect(() => {
     if (data) {
       console.log('📡 API check response:', data);
+      console.log('📡 Current version:', currentVersion);
+      console.log('📡 Latest version:', data?.data?.version);
     }
     if (error) {
       console.error('❌ API check error:', error);
     }
-  }, [data, error]);
+  }, [data, error, currentVersion]);
 
-  // ---- 6. Real‑time push listener ----
+  // Push listener
   useEffect(() => {
     if (!isNative) return;
 
@@ -202,7 +234,7 @@ const AppUpdateChecker = () => {
     };
   }, [isNative, refetch]);
 
-  // ---- 7. Resume listener ----
+  // Resume listener
   useEffect(() => {
     if (!isNative) return;
 
@@ -226,22 +258,40 @@ const AppUpdateChecker = () => {
     };
   }, [isNative, refetch, isFirstLaunch]);
 
-  // ---- 8. Update from API response ----
+  // Update from API response
   useEffect(() => {
-    if (data?.data?.hasUpdate && !isLoading && !isLoadingVersion && versionVerified && !isFirstLaunch) {
+    if (data?.data?.hasUpdate && !isLoading && !isLoadingVersion && versionVerified && !isFirstLaunch && currentVersion) {
       console.log('📱 Update from API check:', data.data);
+      
+      // CRITICAL: Only show if versions are DIFFERENT
+      const apiVersion = normalizeVersion(data.data.version);
+      const currentVer = normalizeVersion(currentVersion);
+      
+      console.log('📱 Comparing versions - API:', apiVersion, 'Current:', currentVer);
+      
+      if (apiVersion === currentVer) {
+        console.log('✅ API version matches current - NO UPDATE NEEDED');
+        return;
+      }
+      
+      // Check if dismissed
+      if (dismissedUntil && new Date() < new Date(dismissedUntil)) {
+        console.log('⏳ Dismissed until:', dismissedUntil);
+        return;
+      }
+      
       if (!updateFromLogin?.hasUpdate) {
         setUpdateFromLogin(data.data);
         setIsVisible(true);
       }
     }
-  }, [data, isLoading, isLoadingVersion, versionVerified, updateFromLogin, isFirstLaunch]);
+  }, [data, isLoading, isLoadingVersion, versionVerified, updateFromLogin, isFirstLaunch, currentVersion, dismissedUntil]);
 
-  // ---- 9. Determine if we have an update ----
+  // Determine if we have an update
   const hasUpdate = !isFirstLaunch && (data?.data?.hasUpdate || updateFromLogin?.hasUpdate || false);
   const updateInfo = updateFromLogin?.hasUpdate ? updateFromLogin : data?.data;
 
-  // ---- 10. Download handler ----
+  // Download handler
   const handleUpdateNow = async () => {
     if (!updateInfo?._id) {
       console.error('No version ID available');
@@ -266,7 +316,10 @@ const AppUpdateChecker = () => {
         }
       }
 
-      localStorage.setItem('appVersion', updateInfo.version);
+      // Update stored version
+      const normVersion = normalizeVersion(updateInfo.version);
+      localStorage.setItem('appVersion', normVersion);
+      setCurrentVersion(normVersion);
 
       if (!updateInfo?.isRequired) {
         setIsVisible(false);
@@ -286,24 +339,22 @@ const AppUpdateChecker = () => {
 
   const handleLater = () => {
     if (!updateInfo?.isRequired) {
+      const later = new Date();
+      later.setHours(later.getHours() + 24);
+      setDismissedUntil(later.toISOString());
       setIsVisible(false);
     }
   };
 
-  // ---- 11. Manual refetch (debug) ----
+  // Manual refetch (debug)
   const forceCheck = () => {
     console.log('🔄 Manual refetch triggered');
+    setDismissedUntil(null);
     refetch();
   };
 
-  // ---- 12. Render ----
-  if (!isNative || isLoading || isLoadingVersion || !versionVerified) {
-    return null;
-  }
-
-  // First launch - render nothing
-  if (isFirstLaunch) {
-    console.log('🆕 First launch - hiding update checker');
+  // Render
+  if (!isNative || isLoading || isLoadingVersion || !versionVerified || isFirstLaunch || !currentVersion) {
     return null;
   }
 
@@ -331,6 +382,24 @@ const AppUpdateChecker = () => {
         >
           Force Check
         </button>
+      )}
+
+      {/* Show current version in dev */}
+      {isDev && (
+        <div style={{
+          position: 'fixed',
+          bottom: 130,
+          right: 10,
+          zIndex: 9999,
+          background: 'rgba(0,0,0,0.8)',
+          color: 'white',
+          padding: '4px 10px',
+          borderRadius: 6,
+          fontSize: 10,
+          fontFamily: 'monospace',
+        }}>
+          v{currentVersion} {hasUpdate ? '🔴' : '✅'}
+        </div>
       )}
 
       {/* Only show update banner if we have an update */}
