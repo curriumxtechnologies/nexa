@@ -124,7 +124,6 @@ const getAppVersion = async (req, res) => {
   try {
     const { platform = 'android', currentVersion, token } = req.query;
 
-    // Find the latest active version for the platform
     const latestVersion = await AppVersion.findOne({ 
       platform, 
       isActive: true 
@@ -133,48 +132,45 @@ const getAppVersion = async (req, res) => {
     if (!latestVersion) {
       return res.status(200).json({
         success: true,
-        data: {
-          hasUpdate: false,
-          message: 'No app version found'
-        }
+        data: { hasUpdate: false, message: 'No app version found' }
       });
     }
 
-    // Try to get user's current version from token if provided
-    let userVersion = currentVersion;
-    let userId = null;
+    // ALWAYS trust the version the device itself reported.
+    // Never let a stale DB value override the real installed version.
+    const userVersion = currentVersion;
 
     if (token) {
       try {
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        userId = decoded.id;
-        const user = await User.findById(userId).select('appVersion');
-        if (user && user.appVersion) {
-          userVersion = user.appVersion;
+        const userId = decoded.id;
+
+        // Keep DB in sync as a side effect only — fire and forget,
+        // does NOT affect the comparison below.
+        if (userVersion) {
+          User.findByIdAndUpdate(userId, {
+            appVersion: userVersion,
+            appVersionUpdatedAt: new Date()
+          }).catch(err => console.error('DB version sync failed:', err));
         }
       } catch (error) {
-        // Token invalid or expired - continue with provided currentVersion
-        console.log('Token verification failed, using provided version');
+        console.log('Token verification failed, continuing with provided version');
       }
     }
 
-    // Check if update is needed using semver (better comparison)
     let hasUpdate = false;
     let isRequired = false;
 
     if (userVersion) {
       try {
-        // Use semver for robust comparison
         const semver = await import('semver');
         hasUpdate = semver.gt(latestVersion.version, userVersion);
         isRequired = latestVersion.isRequired && hasUpdate;
       } catch {
-        // Fallback to simple string comparison if semver not available
         hasUpdate = latestVersion.version !== userVersion;
         isRequired = latestVersion.isRequired && hasUpdate;
       }
     } else {
-      // If no version provided, assume update is needed
       hasUpdate = true;
       isRequired = latestVersion.isRequired;
     }
@@ -191,7 +187,7 @@ const getAppVersion = async (req, res) => {
         fileSize: latestVersion.fileSize,
         fileName: latestVersion.fileName,
         releasedAt: latestVersion.createdAt,
-        userVersion: userVersion // Include for debugging
+        userVersion
       }
     });
 
