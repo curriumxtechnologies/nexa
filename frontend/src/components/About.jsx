@@ -35,6 +35,13 @@ const About = () => {
       color: 'blue'
     },
     {
+      name: 'Joshua Sorochi',
+      role: 'Lead Developer, Nexa',
+      description: 'Full-stack development & performance optimization',
+      image: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=200&h=200&fit=crop',
+      color: 'green'
+    },
+    {
       name: 'Lovoh Create',
       role: 'Parent Company',
       description: 'Innovation & Design Hub',

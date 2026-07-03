@@ -25,10 +25,11 @@ const AppUpdateChecker = () => {
   const [isDownloading, setIsDownloading] = useState(false);
   const [versionVerified, setVersionVerified] = useState(false);
   const [updateFromLogin, setUpdateFromLogin] = useState(null);
+  const [isFirstLaunch, setIsFirstLaunch] = useState(false);
 
   const { user, token, appUpdate } = useSelector((state) => state.auth);
   const [updateUserVersion] = useUpdateUserAppVersionMutation();
-  const { isSupported } = useMobilePushNotifications(); // just for awareness
+  const { isSupported } = useMobilePushNotifications();
 
   // ---- 1. Debug: log component state ----
   useEffect(() => {
@@ -40,18 +41,19 @@ const AppUpdateChecker = () => {
       hasToken: !!token,
       hasUpdate: !!updateFromLogin?.hasUpdate,
       isVisible,
+      isFirstLaunch,
       updateInfo: updateFromLogin || null,
     });
-  }, [isNative, isLoadingVersion, versionVerified, currentVersion, token, updateFromLogin, isVisible]);
+  }, [isNative, isLoadingVersion, versionVerified, currentVersion, token, updateFromLogin, isVisible, isFirstLaunch]);
 
   // ---- 2. Check for update from login response ----
   useEffect(() => {
-    if (appUpdate?.hasUpdate) {
+    if (appUpdate?.hasUpdate && !isFirstLaunch) {
       console.log('📱 Update from login response:', appUpdate);
       setUpdateFromLogin(appUpdate);
       setIsVisible(true);
     }
-  }, [appUpdate]);
+  }, [appUpdate, isFirstLaunch]);
 
   // ---- 3. Get device version on startup ----
   useEffect(() => {
@@ -63,22 +65,49 @@ const AppUpdateChecker = () => {
         if (isNativePlatform) {
           const { Device } = await import('@capacitor/device');
           const info = await Device.getInfo();
-          let version = info.appVersion;
+          const deviceVersion = info.appVersion;
+          const normDeviceVersion = normalizeVersion(deviceVersion);
 
+          // Check if this is first launch
+          const storedVersion = localStorage.getItem('appVersion');
+          
+          if (!storedVersion) {
+            // FIRST LAUNCH - Store version and exit
+            console.log('🆕 First launch detected! Version:', deviceVersion);
+            localStorage.setItem('appVersion', deviceVersion);
+            setCurrentVersion(normDeviceVersion);
+            setIsFirstLaunch(true);
+            setVersionVerified(true);
+            setIsLoadingVersion(false);
+            
+            // If user is logged in, sync with backend
+            if (token && user?.id) {
+              try {
+                await updateUserVersion({
+                  token,
+                  version: deviceVersion
+                }).unwrap();
+                console.log('✅ Synced first launch version with backend');
+              } catch (error) {
+                console.error('Failed to sync version:', error);
+              }
+            }
+            return; // EXIT - No update check for first launch
+          }
+
+          // ---- EXISTING USER - Continue with update check ----
+          console.log('📱 Existing user - device version:', deviceVersion);
+          
+          let version = deviceVersion;
+          
           // Prefer DB version if available
           if (user?.appVersion) {
             version = user.appVersion;
-            setVersionVerified(true);
-          } else {
-            const stored = localStorage.getItem('appVersion');
-            if (stored) version = stored;
           }
 
-          // Normalise version (remove 'v')
           const normVersion = normalizeVersion(version);
           setCurrentVersion(normVersion);
-
-          console.log('📱 Device version:', normVersion);
+          setVersionVerified(true);
 
           if (token && normVersion) {
             try {
@@ -87,7 +116,6 @@ const AppUpdateChecker = () => {
                 version: normVersion
               }).unwrap();
               console.log('✅ Version verified on startup:', result);
-              setVersionVerified(true);
 
               if (result.data?.needsUpdate) {
                 console.log('📱 Update needed from startup check:', result.data.updateInfo);
@@ -99,13 +127,9 @@ const AppUpdateChecker = () => {
               }
             } catch (error) {
               console.error('❌ Version verification failed:', error);
-              setVersionVerified(true);
             }
-          } else if (!token) {
-            setVersionVerified(true);
           }
         } else {
-          // Not native – still mark as verified so we don't block forever
           setVersionVerified(true);
         }
       } catch (error) {
@@ -119,8 +143,8 @@ const AppUpdateChecker = () => {
     getAppVersion();
   }, [user?.appVersion, token, updateUserVersion]);
 
-  // ---- 4. Polling query (fallback currentVersion = '0.0.0') ----
-  const queryVersion = currentVersion || '0.0.0'; // ensure we always send something
+  // ---- 4. Polling query ----
+  const queryVersion = currentVersion || '0.0.0';
   const { data, isLoading, error, refetch } = useCheckAppUpdateQuery(
     {
       platform: 'android',
@@ -128,8 +152,8 @@ const AppUpdateChecker = () => {
       token: token || undefined,
     },
     {
-      skip: !isNative || isLoadingVersion || !versionVerified,
-      pollingInterval: 120000, // 2 minutes
+      skip: !isNative || isLoadingVersion || !versionVerified || isFirstLaunch,
+      pollingInterval: 120000,
     }
   );
 
@@ -143,7 +167,7 @@ const AppUpdateChecker = () => {
     }
   }, [data, error]);
 
-  // ---- 6. Real‑time push listener (Capacitor) ----
+  // ---- 6. Real‑time push listener ----
   useEffect(() => {
     if (!isNative) return;
 
@@ -154,15 +178,11 @@ const AppUpdateChecker = () => {
         pushListener = await PushNotifications.addListener(
           'pushNotificationReceived',
           (notification) => {
-            console.log('📩 PUSH RECEIVED (raw):', notification);
+            console.log('📩 PUSH RECEIVED:', notification);
             const payload = notification?.data || notification?.payload || {};
-            console.log('📩 Extracted data:', payload);
-
             if (payload.type === 'APP_UPDATE') {
               console.log('🔄 APP_UPDATE push – calling refetch()');
               refetch();
-            } else {
-              console.log('⏭️ Ignoring push with type:', payload.type);
             }
           }
         );
@@ -182,7 +202,7 @@ const AppUpdateChecker = () => {
     };
   }, [isNative, refetch]);
 
-  // ---- 7. Resume listener (app comes to foreground) ----
+  // ---- 7. Resume listener ----
   useEffect(() => {
     if (!isNative) return;
 
@@ -192,7 +212,9 @@ const AppUpdateChecker = () => {
       listenerHandle = await CapacitorApp.addListener('appStateChange', ({ isActive }) => {
         if (isActive) {
           console.log('📱 App resumed – checking for updates');
-          refetch();
+          if (!isFirstLaunch) {
+            refetch();
+          }
         }
       });
     };
@@ -202,21 +224,21 @@ const AppUpdateChecker = () => {
     return () => {
       listenerHandle?.remove();
     };
-  }, [isNative, refetch]);
+  }, [isNative, refetch, isFirstLaunch]);
 
   // ---- 8. Update from API response ----
   useEffect(() => {
-    if (data?.data?.hasUpdate && !isLoading && !isLoadingVersion && versionVerified) {
+    if (data?.data?.hasUpdate && !isLoading && !isLoadingVersion && versionVerified && !isFirstLaunch) {
       console.log('📱 Update from API check:', data.data);
       if (!updateFromLogin?.hasUpdate) {
         setUpdateFromLogin(data.data);
         setIsVisible(true);
       }
     }
-  }, [data, isLoading, isLoadingVersion, versionVerified, updateFromLogin]);
+  }, [data, isLoading, isLoadingVersion, versionVerified, updateFromLogin, isFirstLaunch]);
 
   // ---- 9. Determine if we have an update ----
-  const hasUpdate = data?.data?.hasUpdate || updateFromLogin?.hasUpdate || false;
+  const hasUpdate = !isFirstLaunch && (data?.data?.hasUpdate || updateFromLogin?.hasUpdate || false);
   const updateInfo = updateFromLogin?.hasUpdate ? updateFromLogin : data?.data;
 
   // ---- 10. Download handler ----
@@ -276,11 +298,15 @@ const AppUpdateChecker = () => {
 
   // ---- 12. Render ----
   if (!isNative || isLoading || isLoadingVersion || !versionVerified) {
-    // Optionally show a loading indicator? Not needed for now.
     return null;
   }
 
-  // Even if no update, we still render the debug button in dev
+  // First launch - render nothing
+  if (isFirstLaunch) {
+    console.log('🆕 First launch - hiding update checker');
+    return null;
+  }
+
   const isDev = import.meta.env.DEV;
 
   return (
