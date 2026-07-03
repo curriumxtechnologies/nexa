@@ -28,7 +28,7 @@ const AppUpdateChecker = () => {
 
   const { user, token, appUpdate } = useSelector((state) => state.auth);
   const [updateUserVersion] = useUpdateUserAppVersionMutation();
-  const { isSupported } = useMobilePushNotifications();
+  const { isSupported } = useMobilePushNotifications(); // just for awareness
 
   // ---- 1. Debug: log component state ----
   useEffect(() => {
@@ -54,10 +54,6 @@ const AppUpdateChecker = () => {
   }, [appUpdate]);
 
   // ---- 3. Get device version on startup ----
-  // ALWAYS trust Device.getInfo().appVersion as the source of truth.
-  // Never let DB (user.appVersion) or localStorage override the real
-  // installed version — that was the bug causing false "update available"
-  // prompts after a fresh install, and it also broke logged-out users.
   useEffect(() => {
     const getAppVersion = async () => {
       try {
@@ -67,23 +63,31 @@ const AppUpdateChecker = () => {
         if (isNativePlatform) {
           const { Device } = await import('@capacitor/device');
           const info = await Device.getInfo();
+          let version = info.appVersion;
 
-          const deviceVersion = normalizeVersion(info.appVersion);
-          setCurrentVersion(deviceVersion);
-          setVersionVerified(true); // we know the true version immediately, no need to wait on network
+          // Prefer DB version if available
+          if (user?.appVersion) {
+            version = user.appVersion;
+            setVersionVerified(true);
+          } else {
+            const stored = localStorage.getItem('appVersion');
+            if (stored) version = stored;
+          }
 
-          console.log('📱 Device version (source of truth):', deviceVersion);
+          // Normalise version (remove 'v')
+          const normVersion = normalizeVersion(version);
+          setCurrentVersion(normVersion);
 
-          // Sync this true version to the DB in the background (non-blocking).
-          // This is a one-way push OUT to the server — it must never feed
-          // back into what the UI considers "current".
-          if (token && deviceVersion) {
+          console.log('📱 Device version:', normVersion);
+
+          if (token && normVersion) {
             try {
               const result = await updateUserVersion({
                 token,
-                version: deviceVersion
+                version: normVersion
               }).unwrap();
-              console.log('✅ Version synced to DB:', result);
+              console.log('✅ Version verified on startup:', result);
+              setVersionVerified(true);
 
               if (result.data?.needsUpdate) {
                 console.log('📱 Update needed from startup check:', result.data.updateInfo);
@@ -94,8 +98,11 @@ const AppUpdateChecker = () => {
                 setIsVisible(true);
               }
             } catch (error) {
-              console.error('❌ Version sync failed (non-blocking):', error);
+              console.error('❌ Version verification failed:', error);
+              setVersionVerified(true);
             }
+          } else if (!token) {
+            setVersionVerified(true);
           }
         } else {
           // Not native – still mark as verified so we don't block forever
@@ -110,10 +117,10 @@ const AppUpdateChecker = () => {
     };
 
     getAppVersion();
-  }, [token, updateUserVersion]);
+  }, [user?.appVersion, token, updateUserVersion]);
 
-  // ---- 4. Polling query ----
-  const queryVersion = currentVersion || '0.0.0';
+  // ---- 4. Polling query (fallback currentVersion = '0.0.0') ----
+  const queryVersion = currentVersion || '0.0.0'; // ensure we always send something
   const { data, isLoading, error, refetch } = useCheckAppUpdateQuery(
     {
       platform: 'android',
@@ -201,23 +208,12 @@ const AppUpdateChecker = () => {
   useEffect(() => {
     if (data?.data?.hasUpdate && !isLoading && !isLoadingVersion && versionVerified) {
       console.log('📱 Update from API check:', data.data);
-
-      // Don't show if the update version matches current (device) version
-      const apiVersion = data.data.version;
-      const currentVer = normalizeVersion(currentVersion);
-      const normalizedApiVersion = normalizeVersion(apiVersion);
-
-      if (normalizedApiVersion === currentVer) {
-        console.log('⏭️ API version matches current - no update needed');
-        return;
-      }
-
       if (!updateFromLogin?.hasUpdate) {
         setUpdateFromLogin(data.data);
         setIsVisible(true);
       }
     }
-  }, [data, isLoading, isLoadingVersion, versionVerified, updateFromLogin, currentVersion]);
+  }, [data, isLoading, isLoadingVersion, versionVerified, updateFromLogin]);
 
   // ---- 9. Determine if we have an update ----
   const hasUpdate = data?.data?.hasUpdate || updateFromLogin?.hasUpdate || false;
@@ -247,6 +243,8 @@ const AppUpdateChecker = () => {
           console.error('❌ Failed to update version in database:', updateError);
         }
       }
+
+      localStorage.setItem('appVersion', updateInfo.version);
 
       if (!updateInfo?.isRequired) {
         setIsVisible(false);
@@ -278,9 +276,11 @@ const AppUpdateChecker = () => {
 
   // ---- 12. Render ----
   if (!isNative || isLoading || isLoadingVersion || !versionVerified) {
+    // Optionally show a loading indicator? Not needed for now.
     return null;
   }
 
+  // Even if no update, we still render the debug button in dev
   const isDev = import.meta.env.DEV;
 
   return (
