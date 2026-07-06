@@ -399,6 +399,10 @@ const getFileIconSvg = (filename) => {
 };
 
 // ─── receiveEmail ──────────────────────────────────────────────────────────────
+/**
+ * Receive email (webhook from Resend)
+ * POST /api/email/webhook/receive
+ */
 const receiveEmail = async (req, res) => {
   try {
     const payload = req.body;
@@ -470,7 +474,7 @@ const receiveEmail = async (req, res) => {
             emailHtml = parsed.html || emailHtml;
             emailText = parsed.text || emailText;
 
-            // ── Process attachments (styled cards) ──
+            // ── Process attachments (styled cards with image preview improvements) ──
             if (parsed.attachments && parsed.attachments.length > 0) {
               console.log(`📎 Found ${parsed.attachments.length} attachments.`);
               const cards = [];
@@ -479,23 +483,52 @@ const receiveEmail = async (req, res) => {
                 const mimeType = att.contentType || 'application/octet-stream';
                 const buffer = att.content;
                 const fileSizeKB = Math.round(buffer.length / 1024);
+                const isImage = mimeType.startsWith('image/');
 
                 try {
                   const url = await uploadBufferToCloudinary(buffer, filename, mimeType);
                   const iconSvg = getFileIconSvg(filename);
 
-                  cards.push(`
-                    <div style="display: flex; align-items: center; gap: 10px; margin: 6px 0; padding: 8px 12px; background: #f8fafc; border-radius: 8px; border: 1px solid #e2e8f0; transition: background 0.2s; max-width: 100%; flex-wrap: wrap;">
-                      <div style="flex-shrink: 0; width: 24px; height: 24px;">${iconSvg}</div>
-                      <a href="${url}" download="${filename}" style="flex: 1 1 120px; color: #7c3aed; text-decoration: none; font-weight: 500; font-size: 14px; word-break: break-word; min-width: 60px;">
-                        ${filename}
-                      </a>
-                      <span style="color: #64748b; font-size: 12px; white-space: nowrap; flex-shrink: 0;">${fileSizeKB} KB</span>
-                      <a href="${url}" download="${filename}" style="flex-shrink: 0; color: #64748b; text-decoration: none; font-size: 16px; padding: 0 4px; hover:color: #7c3aed;">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                      </a>
-                    </div>
-                  `);
+                  if (isImage) {
+                    // ── IMPROVED IMAGE CARD WITH PROPER CONTAINMENT ──
+                    cards.push(`
+                      <div style="margin: 8px 0; padding: 12px; background: #f8fafc; border-radius: 12px; border: 1px solid #e2e8f0; max-width: 100%;">
+                        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
+                          <div style="flex-shrink: 0; width: 24px; height: 24px;">${iconSvg}</div>
+                          <span style="flex: 1; color: #1e293b; font-weight: 500; font-size: 14px; word-break: break-word;">${filename}</span>
+                          <span style="color: #64748b; font-size: 12px; white-space: nowrap; flex-shrink: 0;">${fileSizeKB} KB</span>
+                          <a href="${url}" download="${filename}" style="flex-shrink: 0; color: #64748b; text-decoration: none; font-size: 16px; padding: 0 4px;" target="_blank">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                          </a>
+                          <a href="${url}" target="_blank" style="flex-shrink: 0; color: #7c3aed; text-decoration: none; font-size: 16px; padding: 0 4px;">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                          </a>
+                        </div>
+                        <div style="width: 100%; max-width: 100%; overflow: hidden; border-radius: 8px; background: #f1f5f9; display: flex; justify-content: center; align-items: center; min-height: 100px; max-height: 400px;">
+                          <img 
+                            src="${url}" 
+                            alt="${filename}" 
+                            style="max-width: 100%; max-height: 400px; width: auto; height: auto; object-fit: contain; display: block; border-radius: 4px;"
+                            loading="lazy"
+                          />
+                        </div>
+                      </div>
+                    `);
+                  } else {
+                    // ── REGULAR FILE CARD (non-image) ──
+                    cards.push(`
+                      <div style="display: flex; align-items: center; gap: 10px; margin: 6px 0; padding: 8px 12px; background: #f8fafc; border-radius: 8px; border: 1px solid #e2e8f0; max-width: 100%; flex-wrap: wrap;">
+                        <div style="flex-shrink: 0; width: 24px; height: 24px;">${iconSvg}</div>
+                        <a href="${url}" download="${filename}" style="flex: 1 1 120px; color: #7c3aed; text-decoration: none; font-weight: 500; font-size: 14px; word-break: break-word; min-width: 60px;">
+                          ${filename}
+                        </a>
+                        <span style="color: #64748b; font-size: 12px; white-space: nowrap; flex-shrink: 0;">${fileSizeKB} KB</span>
+                        <a href="${url}" download="${filename}" style="flex-shrink: 0; color: #64748b; text-decoration: none; font-size: 16px; padding: 0 4px;">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                        </a>
+                      </div>
+                    `);
+                  }
                   console.log(`✅ Uploaded "${filename}" to Cloudinary`);
                 } catch (uploadError) {
                   console.error(`Failed to upload "${filename}":`, uploadError);
@@ -507,7 +540,7 @@ const receiveEmail = async (req, res) => {
                   `);
                 }
               }
-              attachmentHtml = `<br/><br/><strong style="font-size: 16px; color: #1e293b;">Attachments</strong><br/>${cards.join('')}`;
+              attachmentHtml = `<br/><br/><strong style="font-size: 16px; color: #1e293b;">Attachments (${parsed.attachments.length})</strong><br/>${cards.join('')}`;
             }
           } else {
             console.warn('No raw.download_url found in email metadata.');
@@ -516,6 +549,28 @@ const receiveEmail = async (req, res) => {
       } catch (fetchError) {
         console.error('Error processing email:', fetchError);
       }
+    }
+
+    // ── Also process inline images in the HTML content ──
+    if (emailHtml) {
+      // Wrap images in the email content with proper styling
+      emailHtml = emailHtml.replace(
+        /<img([^>]*)>/g,
+        (match, attrs) => {
+          // Check if it already has a style attribute
+          const hasStyle = /style\s*=\s*["']/i.test(attrs);
+          if (hasStyle) {
+            // Add max-width to existing style
+            return match.replace(
+              /(style\s*=\s*["'])/i,
+              `$1max-width: 100%; max-height: 500px; width: auto; height: auto; object-fit: contain; border-radius: 8px; margin: 12px 0; display: block; `
+            );
+          } else {
+            // Add new style attribute
+            return `<img${attrs} style="max-width: 100%; max-height: 500px; width: auto; height: auto; object-fit: contain; border-radius: 8px; margin: 12px 0; display: block;" />`;
+          }
+        }
+      );
     }
 
     // Append attachment cards to the HTML content
