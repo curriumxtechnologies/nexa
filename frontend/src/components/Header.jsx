@@ -1,11 +1,30 @@
 // components/Header.jsx
 import React, { useState, useEffect } from 'react';
-import { Menu, X } from 'lucide-react';
+import { Menu, X, Sun, Moon } from 'lucide-react';
 
 const Header = () => {
   const [isScrolled, setIsScrolled] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isDarkMode, setIsDarkMode] = useState(() => {
+    // Check localStorage or system preference
+    const stored = localStorage.getItem('theme');
+    if (stored) return stored === 'dark';
+    return window.matchMedia('(prefers-color-scheme: dark)').matches;
+  });
 
+  // Apply dark class to html element whenever isDarkMode changes
+  useEffect(() => {
+    const html = document.documentElement;
+    if (isDarkMode) {
+      html.classList.add('dark');
+      localStorage.setItem('theme', 'dark');
+    } else {
+      html.classList.remove('dark');
+      localStorage.setItem('theme', 'light');
+    }
+  }, [isDarkMode]);
+
+  // Scroll effect (unchanged)
   useEffect(() => {
     const handleScroll = () => {
       setIsScrolled(window.scrollY > 20);
@@ -13,6 +32,10 @@ const Header = () => {
     window.addEventListener('scroll', handleScroll);
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
+
+  const toggleDarkMode = () => {
+    setIsDarkMode((prev) => !prev);
+  };
 
   const navLinks = [
     { name: 'Features', href: '#features' },
@@ -35,10 +58,10 @@ const Header = () => {
             <div className="flex items-center justify-between">
               {/* Logo */}
               <a href="/" className="flex items-center group">
-                <img 
-                  src="/nexa-logo.png" 
-                  alt="Nexa Logo" 
-                  className="h-6 w-auto object-contain transition-all duration-300 group-hover:scale-105 brightness-0 invert"
+                <img
+                  src="/nexa-logo.png"
+                  alt="Nexa Logo"
+                  className="h-6 w-auto object-contain transition-all duration-300 group-hover:scale-105 dark:brightness-0 dark:invert"
                 />
               </a>
 
@@ -56,8 +79,20 @@ const Header = () => {
                 ))}
               </nav>
 
-              {/* Desktop Buttons */}
+              {/* Desktop Buttons + Theme Toggle */}
               <div className="hidden md:flex items-center space-x-3">
+                <button
+                  onClick={toggleDarkMode}
+                  className="p-2 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                  aria-label="Toggle dark mode"
+                >
+                  {isDarkMode ? (
+                    <Sun className="w-5 h-5" />
+                  ) : (
+                    <Moon className="w-5 h-5" />
+                  )}
+                </button>
+
                 <a
                   href="/login"
                   className="px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-purple-600 dark:hover:text-purple-400 transition-colors duration-200 text-sm font-medium"
@@ -100,6 +135,25 @@ const Header = () => {
               </a>
             ))}
             <div className="pt-4 flex flex-col space-y-3">
+              <button
+                onClick={() => {
+                  toggleDarkMode();
+                  setIsMobileMenuOpen(false);
+                }}
+                className="flex items-center justify-center space-x-2 px-4 py-3.5 text-gray-600 dark:text-gray-400 hover:text-purple-600 dark:hover:text-purple-400 transition-colors text-base font-medium rounded-xl hover:bg-gray-50 dark:hover:bg-gray-800/50"
+              >
+                {isDarkMode ? (
+                  <>
+                    <Sun className="w-5 h-5" />
+                    <span>Light Mode</span>
+                  </>
+                ) : (
+                  <>
+                    <Moon className="w-5 h-5" />
+                    <span>Dark Mode</span>
+                  </>
+                )}
+              </button>
               <a
                 href="/login"
                 onClick={() => setIsMobileMenuOpen(false)}
