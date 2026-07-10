@@ -12,6 +12,8 @@ import { protect } from "../middleware/authMiddleware.js";
 import multer from "multer";
 import { v2 as cloudinary } from "cloudinary";
 import { CloudinaryStorage } from "multer-storage-cloudinary";
+import { authLimiter, apiLimiter } from '../middleware/securityMiddleware.js';
+import User from "../models/userModel.js"; // 👈 added import for User model
 
 const router = express.Router();
 
@@ -28,7 +30,7 @@ const storage = new CloudinaryStorage({
   params: {
     folder: "nexa_profile_pictures",
     allowed_formats: [
-      "jpg", "jpeg", "png", "webp", "avif", "heic", "heif", "gif", 
+      "jpg", "jpeg", "png", "webp", "avif", "heic", "heif", "gif",
       "bmp", "tif", "tiff", "svg", "ico", "apng", "jfif", "dng",
     ],
     transformation: [{ width: 500, height: 500, crop: "fill", gravity: "face" }],
@@ -43,17 +45,21 @@ cloudinary.api
   .then(() => console.log("✅ Cloudinary connected successfully"))
   .catch((err) => console.error("❌ Cloudinary not connected:", err.message));
 
-// Public auth routes (no auth required)
-router.post("/register", upload.single("profilePicture"), register);
-router.post("/verify-email", verifyEmailOTP);
-router.post("/resend-verification", resendVerificationOTP);
-router.post("/login", login);
-router.post("/verify-2fa", verifyTwoFactorOTP);
-router.post("/forgot-password", forgotPassword);
-router.post("/reset-password", resetPassword);
+// ==============================
+// PUBLIC AUTH ROUTES (with rate limiting)
+// ==============================
+router.post("/register", authLimiter, upload.single("profilePicture"), register);
+router.post("/verify-email", authLimiter, verifyEmailOTP);
+router.post("/resend-verification", authLimiter, resendVerificationOTP);
+router.post("/login", authLimiter, login);
+router.post("/verify-2fa", authLimiter, verifyTwoFactorOTP);
+router.post("/forgot-password", authLimiter, forgotPassword);
+router.post("/reset-password", authLimiter, resetPassword);
 
-// Protected routes (auth required)
-router.get("/profile", protect, async (req, res) => {
+// ==============================
+// PROTECTED ROUTES (with API rate limiting)
+// ==============================
+router.get("/profile", protect, apiLimiter, async (req, res) => {
   try {
     const user = await User.findById(req.userId).select('-password -otp -twoFactorOTP -resetPasswordOTP');
     if (!user) {
