@@ -1,4 +1,4 @@
-import rateLimit from 'express-rate-limit';
+import rateLimit from "express-rate-limit";
 
 // ===== RATE LIMITERS =====
 
@@ -16,11 +16,11 @@ export const globalLimiter = rateLimit({
 
 // Strict rate limiter for auth routes (login, register, forgot password, etc.)
 export const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5, // 5 attempts per 15 minutes
+  windowMs: 5 * 60 * 1000, // 5 minutes
+  max: 30, // 30 attempts per 5 minutes
   message: {
     success: false,
-    message: "Too many login attempts, please try again after 15 minutes.",
+    message: "Too many login attempts, please try again after 5 minutes.",
   },
   standardHeaders: true,
   legacyHeaders: false,

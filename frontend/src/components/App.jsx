@@ -1,14 +1,14 @@
 // screens/App.jsx
-import React, { useState, useEffect } from 'react';
-import { 
-  Download, 
-  Smartphone, 
-  CheckCircle, 
-  XCircle, 
-  Loader2, 
-  AlertCircle, 
-  ChevronDown, 
-  Sparkles, 
+import React, { useState, useEffect } from "react";
+import {
+  Download,
+  Smartphone,
+  CheckCircle,
+  XCircle,
+  Loader2,
+  AlertCircle,
+  ChevronDown,
+  Sparkles,
   Zap,
   Share2,
   Copy,
@@ -32,11 +32,14 @@ import {
   Circle,
   Hexagon,
   Triangle,
-  Square
-} from 'lucide-react';
-import { useGetAppVersionsQuery } from '../slices/adminApiSlice';
-import { getAppDownloadUrl, useUpdateUserAppVersionMutation } from '../slices/appApiSlice';
-import { useSelector } from 'react-redux';
+  Square,
+} from "lucide-react";
+import { useGetAppVersionsQuery } from "../slices/adminApiSlice";
+import {
+  getAppDownloadUrl,
+  useUpdateUserAppVersionMutation,
+} from "../slices/appApiSlice";
+import { useSelector } from "react-redux";
 
 const App = () => {
   const [currentVersion, setCurrentVersion] = useState(null);
@@ -50,7 +53,9 @@ const App = () => {
 
   const { user, token } = useSelector((state) => state.auth);
 
-  const { data, isLoading, error, refetch } = useGetAppVersionsQuery({ platform: 'android' });
+  const { data, isLoading, error, refetch } = useGetAppVersionsQuery({
+    platform: "android",
+  });
   const [updateUserVersion] = useUpdateUserAppVersionMutation();
 
   const versions = data?.data?.versions || [];
@@ -61,25 +66,25 @@ const App = () => {
       try {
         if (window.Capacitor?.isNativePlatform()) {
           setIsNative(true);
-          const { Device } = await import('@capacitor/device');
+          const { Device } = await import("@capacitor/device");
           const info = await Device.getInfo();
           let version = info.appVersion;
           if (user?.appVersion) {
             version = user.appVersion;
           } else {
-            const storedVersion = localStorage.getItem('appVersion');
+            const storedVersion = localStorage.getItem("appVersion");
             if (storedVersion) {
               version = storedVersion;
             }
           }
           setCurrentVersion(version);
         } else {
-          const storedVersion = localStorage.getItem('appVersion');
-          setCurrentVersion(storedVersion || '1.0.0');
+          const storedVersion = localStorage.getItem("appVersion");
+          setCurrentVersion(storedVersion || "1.0.0");
         }
       } catch (error) {
-        console.error('Failed to get app version:', error);
-        setCurrentVersion('1.0.0');
+        console.error("Failed to get app version:", error);
+        setCurrentVersion("1.0.0");
       } finally {
         setIsLoadingVersion(false);
       }
@@ -100,14 +105,16 @@ const App = () => {
     }
     setIsDownloading(true);
     const downloadUrl = getAppDownloadUrl(selectedVersion._id, token);
-    window.open(downloadUrl, isNative ? '_system' : '_blank');
+    window.open(downloadUrl, isNative ? "_system" : "_blank");
     if (token && user?.id) {
       updateUserVersion({
         token,
-        version: selectedVersion.version
-      }).unwrap().catch(err => console.error('Failed to update version:', err));
+        version: selectedVersion.version,
+      })
+        .unwrap()
+        .catch((err) => console.error("Failed to update version:", err));
     }
-    localStorage.setItem('appVersion', selectedVersion.version);
+    localStorage.setItem("appVersion", selectedVersion.version);
     setCurrentVersion(selectedVersion.version);
     setTimeout(() => {
       setShowModal(false);
@@ -120,9 +127,9 @@ const App = () => {
     const baseUrl = window.location.origin;
     const shareUrl = `${baseUrl}/app/download/${version._id}`;
     const shareData = {
-      title: 'Nexa App',
-      text: `Download Nexa v${version.version} - ${version.releaseNotes || 'Latest update'}`,
-      url: shareUrl
+      title: "Nexa App",
+      text: `Download Nexa v${version.version} - ${version.releaseNotes || "Latest update"}`,
+      url: shareUrl,
     };
     try {
       if (navigator.share) {
@@ -133,32 +140,32 @@ const App = () => {
         setTimeout(() => setCopied(false), 3000);
       }
     } catch (error) {
-      if (error.name !== 'AbortError') {
-        console.error('Share failed:', error);
+      if (error.name !== "AbortError") {
+        console.error("Share failed:", error);
         try {
           await navigator.clipboard.writeText(shareUrl);
           setCopied(true);
           setTimeout(() => setCopied(false), 3000);
         } catch (clipError) {
-          console.error('Clipboard failed:', clipError);
+          console.error("Clipboard failed:", clipError);
         }
       }
     }
   };
 
   const formatFileSize = (bytes) => {
-    if (!bytes) return 'Unknown';
-    const sizes = ['B', 'KB', 'MB', 'GB'];
+    if (!bytes) return "Unknown";
+    const sizes = ["B", "KB", "MB", "GB"];
     const i = Math.floor(Math.log(bytes) / Math.log(1024));
-    return parseFloat((bytes / Math.pow(1024, i)).toFixed(1)) + ' ' + sizes[i];
+    return parseFloat((bytes / Math.pow(1024, i)).toFixed(1)) + " " + sizes[i];
   };
 
   const formatDate = (date) => {
-    if (!date) return 'Unknown';
-    return new Date(date).toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric'
+    if (!date) return "Unknown";
+    return new Date(date).toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
     });
   };
 
@@ -170,7 +177,9 @@ const App = () => {
             <div className="w-24 h-24 rounded-full border-4 border-purple-500/30 border-t-purple-500 animate-spin mx-auto"></div>
             <Smartphone className="w-10 h-10 text-purple-500 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
           </div>
-          <p className="mt-6 text-gray-400 font-light tracking-wider">LOADING</p>
+          <p className="mt-6 text-gray-400 font-light tracking-wider">
+            LOADING
+          </p>
         </div>
       </div>
     );
@@ -183,8 +192,12 @@ const App = () => {
           <div className="w-20 h-20 rounded-full bg-red-500/10 flex items-center justify-center mx-auto mb-5 border border-red-500/20">
             <AlertCircle className="w-10 h-10 text-red-400" />
           </div>
-          <h3 className="text-lg font-light text-white mb-2">Connection Error</h3>
-          <p className="text-gray-400 text-sm mb-6 font-light">Unable to load app information</p>
+          <h3 className="text-lg font-light text-white mb-2">
+            Connection Error
+          </h3>
+          <p className="text-gray-400 text-sm mb-6 font-light">
+            Unable to load app information
+          </p>
           <button
             onClick={() => refetch()}
             className="px-8 py-3 bg-purple-500/10 text-purple-400 border border-purple-500/20 rounded-full hover:bg-purple-500/20 transition text-sm font-light tracking-wider"
@@ -196,7 +209,8 @@ const App = () => {
     );
   }
 
-  const needsUpdate = currentVersion && latestVersion && currentVersion !== latestVersion.version;
+  const needsUpdate =
+    currentVersion && latestVersion && currentVersion !== latestVersion.version;
 
   return (
     <div className="min-h-screen bg-[#0a0a0f]">
@@ -219,7 +233,9 @@ const App = () => {
               <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-purple-600 flex items-center justify-center">
                 <Smartphone className="w-5 h-5 text-white" />
               </div>
-              <span className="text-lg font-light text-white tracking-wider">NEXA</span>
+              <span className="text-lg font-light text-white tracking-wider">
+                NEXA
+              </span>
             </div>
             {currentVersion && (
               <span className="text-xs text-gray-500 font-light tracking-wider px-4 py-1.5 border border-white/5 rounded-full">
@@ -255,7 +271,7 @@ const App = () => {
                     </span>
                   )}
                 </div>
-                
+
                 {latestVersion.releaseNotes && (
                   <p className="text-gray-400 text-sm font-light max-w-xl leading-relaxed">
                     {latestVersion.releaseNotes}
@@ -279,7 +295,7 @@ const App = () => {
                   onClick={() => openDownloadModal(latestVersion)}
                   className="group px-8 py-3.5 bg-purple-500 text-white rounded-full hover:bg-purple-600 transition flex items-center gap-2 text-sm font-light tracking-wider"
                 >
-                  {needsUpdate ? 'Update' : 'Download'}
+                  {needsUpdate ? "Update" : "Download"}
                   <MoveRight className="w-4 h-4 group-hover:translate-x-1 transition" />
                 </button>
                 <button
@@ -297,12 +313,20 @@ const App = () => {
         {currentVersion && latestVersion && (
           <div className="mb-10">
             <div className="flex items-center gap-3 text-sm">
-              <div className={`w-1.5 h-1.5 rounded-full ${needsUpdate ? 'bg-yellow-400 animate-pulse' : 'bg-green-400'}`}></div>
+              <div
+                className={`w-1.5 h-1.5 rounded-full ${needsUpdate ? "bg-yellow-400 animate-pulse" : "bg-green-400"}`}
+              ></div>
               <span className="text-gray-500 font-light">
                 {needsUpdate ? (
-                  <>New version <span className="text-purple-400">v{latestVersion.version}</span> available</>
+                  <>
+                    New version{" "}
+                    <span className="text-purple-400">
+                      v{latestVersion.version}
+                    </span>{" "}
+                    available
+                  </>
                 ) : (
-                  'Latest version installed'
+                  "Latest version installed"
                 )}
               </span>
             </div>
@@ -312,16 +336,21 @@ const App = () => {
         {/* Feature Grid - Minimal */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-10">
           {[
-            { label: 'Fast', icon: Zap },
-            { label: 'Secure', icon: Shield },
-            { label: 'Auto', icon: TrendingUp },
-            { label: 'Free', icon: Crown }
+            { label: "Fast", icon: Zap },
+            { label: "Secure", icon: Shield },
+            { label: "Auto", icon: TrendingUp },
+            { label: "Free", icon: Crown },
           ].map((item, idx) => {
             const Icon = item.icon;
             return (
-              <div key={idx} className="border border-white/5 rounded-2xl p-4 text-center hover:border-white/10 transition">
+              <div
+                key={idx}
+                className="border border-white/5 rounded-2xl p-4 text-center hover:border-white/10 transition"
+              >
                 <Icon className="w-5 h-5 text-purple-400 mx-auto mb-2" />
-                <p className="text-[10px] text-gray-500 font-light tracking-wider">{item.label}</p>
+                <p className="text-[10px] text-gray-500 font-light tracking-wider">
+                  {item.label}
+                </p>
               </div>
             );
           })}
@@ -333,8 +362,12 @@ const App = () => {
             onClick={() => setShowAllVersions(!showAllVersions)}
             className="w-full flex items-center justify-center gap-2 py-4 text-xs text-gray-500 hover:text-gray-300 transition font-light tracking-wider"
           >
-            {showAllVersions ? 'Hide older versions' : `View all ${versions.length} versions`}
-            <ChevronDown className={`w-4 h-4 transition-transform duration-300 ${showAllVersions ? 'rotate-180' : ''}`} />
+            {showAllVersions
+              ? "Hide older versions"
+              : `View all ${versions.length} versions`}
+            <ChevronDown
+              className={`w-4 h-4 transition-transform duration-300 ${showAllVersions ? "rotate-180" : ""}`}
+            />
           </button>
         )}
 
@@ -348,16 +381,22 @@ const App = () => {
               return (
                 <div
                   key={version._id}
-                  className={`group border ${isCurrent ? 'border-purple-500/20 bg-purple-500/5' : 'border-white/5'} rounded-2xl p-4 hover:border-white/10 transition`}
+                  className={`group border ${isCurrent ? "border-purple-500/20 bg-purple-500/5" : "border-white/5"} rounded-2xl p-4 hover:border-white/10 transition`}
                 >
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-4">
-                      <span className="text-white font-light">v{version.version}</span>
+                      <span className="text-white font-light">
+                        v{version.version}
+                      </span>
                       {isCurrent && (
-                        <span className="text-[10px] text-green-400 border border-green-500/20 px-2 py-0.5 rounded-full font-light">INSTALLED</span>
+                        <span className="text-[10px] text-green-400 border border-green-500/20 px-2 py-0.5 rounded-full font-light">
+                          INSTALLED
+                        </span>
                       )}
                       {version.isRequired && (
-                        <span className="text-[10px] text-red-400 border border-red-500/20 px-2 py-0.5 rounded-full font-light">REQUIRED</span>
+                        <span className="text-[10px] text-red-400 border border-red-500/20 px-2 py-0.5 rounded-full font-light">
+                          REQUIRED
+                        </span>
                       )}
                     </div>
                     <div className="flex items-center gap-2">
@@ -372,11 +411,11 @@ const App = () => {
                         disabled={isCurrent}
                         className={`px-4 py-1.5 rounded-full text-xs font-light tracking-wider transition ${
                           isCurrent
-                            ? 'text-gray-500 cursor-default'
-                            : 'border border-white/10 text-gray-300 hover:bg-white/5'
+                            ? "text-gray-500 cursor-default"
+                            : "border border-white/10 text-gray-300 hover:bg-white/5"
                         }`}
                       >
-                        {isCurrent ? 'Installed' : 'Download'}
+                        {isCurrent ? "Installed" : "Download"}
                       </button>
                     </div>
                   </div>
@@ -388,15 +427,19 @@ const App = () => {
 
         {/* Instructions - Minimal */}
         <div className="border border-white/5 rounded-2xl p-6">
-          <p className="text-[10px] text-gray-500 tracking-wider mb-4 font-light">INSTALLATION</p>
+          <p className="text-[10px] text-gray-500 tracking-wider mb-4 font-light">
+            INSTALLATION
+          </p>
           <div className="grid grid-cols-3 gap-4">
             {[
-              { step: '01', label: 'Download' },
-              { step: '02', label: 'Allow' },
-              { step: '03', label: 'Install' }
+              { step: "01", label: "Download" },
+              { step: "02", label: "Allow" },
+              { step: "03", label: "Install" },
             ].map((item, idx) => (
               <div key={idx} className="text-center">
-                <div className="text-xs text-purple-400 font-light mb-1">{item.step}</div>
+                <div className="text-xs text-purple-400 font-light mb-1">
+                  {item.step}
+                </div>
                 <p className="text-xs text-gray-400 font-light">{item.label}</p>
               </div>
             ))}
@@ -411,9 +454,13 @@ const App = () => {
             <div className="flex items-start justify-between mb-6">
               <div>
                 <h3 className="text-xl font-light text-white">
-                  {currentVersion && selectedVersion.version !== currentVersion ? 'Update' : 'Download'}
+                  {currentVersion && selectedVersion.version !== currentVersion
+                    ? "Update"
+                    : "Download"}
                 </h3>
-                <p className="text-sm text-gray-500 font-light">v{selectedVersion.version}</p>
+                <p className="text-sm text-gray-500 font-light">
+                  v{selectedVersion.version}
+                </p>
               </div>
               <button
                 onClick={() => {
@@ -431,7 +478,9 @@ const App = () => {
             <div className="border border-white/5 rounded-2xl p-4 mb-6">
               <div className="flex items-center justify-between text-sm mb-2">
                 <span className="text-gray-500 font-light">Size</span>
-                <span className="text-white font-light">{formatFileSize(selectedVersion.fileSize)}</span>
+                <span className="text-white font-light">
+                  {formatFileSize(selectedVersion.fileSize)}
+                </span>
               </div>
               <div className="flex items-center justify-between text-sm">
                 <span className="text-gray-500 font-light">Platform</span>
@@ -482,7 +531,7 @@ const App = () => {
               ) : (
                 <Share2 className="w-3.5 h-3.5" />
               )}
-              {copied ? 'Link copied' : 'Share download link'}
+              {copied ? "Link copied" : "Share download link"}
             </button>
           </div>
         </div>

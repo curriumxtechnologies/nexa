@@ -1,22 +1,21 @@
-import React, { useEffect, useState } from 'react';
-import { useCheckAppUpdateQuery, getAppDownloadUrl, useUpdateUserAppVersionMutation } from '../slices/appApiSlice';
-import { useSelector } from 'react-redux';
-import { App as CapacitorApp } from '@capacitor/app';
-import { PushNotifications } from '@capacitor/push-notifications';
+import React, { useEffect, useState } from "react";
 import {
-  Download,
-  X,
-  AlertCircle,
-  Loader2
-} from 'lucide-react';
-import { useMobilePushNotifications } from '../hooks/useMobilePushNotifications';
+  useCheckAppUpdateQuery,
+  getAppDownloadUrl,
+  useUpdateUserAppVersionMutation,
+} from "../slices/appApiSlice";
+import { useSelector } from "react-redux";
+import { App as CapacitorApp } from "@capacitor/app";
+import { PushNotifications } from "@capacitor/push-notifications";
+import { Download, X, AlertCircle, Loader2 } from "lucide-react";
+import { useMobilePushNotifications } from "../hooks/useMobilePushNotifications";
 
 // Normalize version string to just major.minor.patch
 // Removes 'v' prefix, build metadata, and any suffixes
 const normalizeVersion = (v) => {
-  if (!v) return '';
+  if (!v) return "";
   // Remove leading 'v' or 'V'
-  let str = v.replace(/^[vV]\s*/, '');
+  let str = v.replace(/^[vV]\s*/, "");
   // Extract semantic version (major.minor.patch)
   const match = str.match(/(\d+\.\d+\.\d+)/);
   return match ? match[1] : str.trim();
@@ -39,7 +38,7 @@ const AppUpdateChecker = () => {
 
   // Debug logging
   useEffect(() => {
-    console.log('🔍 AppUpdateChecker state:', {
+    console.log("🔍 AppUpdateChecker state:", {
       isNative,
       isLoadingVersion,
       versionVerified,
@@ -51,7 +50,17 @@ const AppUpdateChecker = () => {
       dismissedUntil,
       updateInfo: updateFromLogin || null,
     });
-  }, [isNative, isLoadingVersion, versionVerified, currentVersion, token, updateFromLogin, isVisible, isFirstLaunch, dismissedUntil]);
+  }, [
+    isNative,
+    isLoadingVersion,
+    versionVerified,
+    currentVersion,
+    token,
+    updateFromLogin,
+    isVisible,
+    isFirstLaunch,
+    dismissedUntil,
+  ]);
 
   // Check for update from login response
   useEffect(() => {
@@ -59,11 +68,11 @@ const AppUpdateChecker = () => {
       const updateVer = normalizeVersion(appUpdate.version);
       const currentVer = normalizeVersion(currentVersion);
       if (updateVer !== currentVer) {
-        console.log('📱 Update from login response:', appUpdate);
+        console.log("📱 Update from login response:", appUpdate);
         setUpdateFromLogin(appUpdate);
         setIsVisible(true);
       } else {
-        console.log('⏭️ Login update version matches current - ignoring');
+        console.log("⏭️ Login update version matches current - ignoring");
       }
     }
   }, [appUpdate, isFirstLaunch, currentVersion]);
@@ -76,53 +85,61 @@ const AppUpdateChecker = () => {
         setIsNative(!!isNativePlatform);
 
         if (isNativePlatform) {
-          const { Device } = await import('@capacitor/device');
+          const { Device } = await import("@capacitor/device");
           const info = await Device.getInfo();
           const rawDeviceVersion = info.appVersion;
           const normalizedDeviceVersion = normalizeVersion(rawDeviceVersion);
 
           // Check if this is first launch
-          const storedVersion = localStorage.getItem('appVersion');
-          
+          const storedVersion = localStorage.getItem("appVersion");
+
           if (!storedVersion) {
             // FIRST LAUNCH - Store version and exit
-            console.log('🆕 First launch detected! Raw:', rawDeviceVersion, 'Normalized:', normalizedDeviceVersion);
-            localStorage.setItem('appVersion', normalizedDeviceVersion);
+            console.log(
+              "🆕 First launch detected! Raw:",
+              rawDeviceVersion,
+              "Normalized:",
+              normalizedDeviceVersion,
+            );
+            localStorage.setItem("appVersion", normalizedDeviceVersion);
             setCurrentVersion(normalizedDeviceVersion);
             setIsFirstLaunch(true);
             setVersionVerified(true);
             setIsLoadingVersion(false);
-            
+
             // Sync with backend if user is logged in
             if (token && user?.id) {
               try {
                 await updateUserVersion({
                   token,
-                  version: normalizedDeviceVersion
+                  version: normalizedDeviceVersion,
                 }).unwrap();
-                console.log('✅ Synced first launch version with backend');
+                console.log("✅ Synced first launch version with backend");
               } catch (error) {
-                console.error('Failed to sync version:', error);
+                console.error("Failed to sync version:", error);
               }
             }
             return; // EXIT - No update check for first launch
           }
 
           // ---- EXISTING USER ----
-          console.log('📱 Existing user - raw device version:', rawDeviceVersion);
-          console.log('📱 Normalized device version:', normalizedDeviceVersion);
-          console.log('📱 Stored version:', storedVersion);
+          console.log(
+            "📱 Existing user - raw device version:",
+            rawDeviceVersion,
+          );
+          console.log("📱 Normalized device version:", normalizedDeviceVersion);
+          console.log("📱 Stored version:", storedVersion);
 
           // Use stored version as source of truth (already normalized)
           let version = storedVersion;
-          
+
           // If user has DB version and it's different from stored, use DB version
           if (user?.appVersion) {
             const dbNorm = normalizeVersion(user.appVersion);
             if (dbNorm !== normalizeVersion(storedVersion)) {
-              console.log('📱 DB version differs, using DB:', user.appVersion);
+              console.log("📱 DB version differs, using DB:", user.appVersion);
               version = dbNorm;
-              localStorage.setItem('appVersion', version);
+              localStorage.setItem("appVersion", version);
             }
           }
 
@@ -134,9 +151,9 @@ const AppUpdateChecker = () => {
             try {
               const result = await updateUserVersion({
                 token,
-                version: version
+                version: version,
               }).unwrap();
-              console.log('✅ Version verified on startup:', result);
+              console.log("✅ Version verified on startup:", result);
 
               // Only show update if versions are DIFFERENT
               if (result.data?.needsUpdate) {
@@ -144,26 +161,31 @@ const AppUpdateChecker = () => {
                 if (latestVersion) {
                   const normalizedLatest = normalizeVersion(latestVersion);
                   if (normalizedLatest !== version) {
-                    console.log('📱 Update needed from startup check:', result.data.updateInfo);
+                    console.log(
+                      "📱 Update needed from startup check:",
+                      result.data.updateInfo,
+                    );
                     setUpdateFromLogin({
                       hasUpdate: true,
-                      ...result.data.updateInfo
+                      ...result.data.updateInfo,
                     });
                     setIsVisible(true);
                   } else {
-                    console.log('✅ Latest version matches current - no update needed');
+                    console.log(
+                      "✅ Latest version matches current - no update needed",
+                    );
                   }
                 }
               }
             } catch (error) {
-              console.error('❌ Version verification failed:', error);
+              console.error("❌ Version verification failed:", error);
             }
           }
         } else {
           setVersionVerified(true);
         }
       } catch (error) {
-        console.error('Failed to get app version:', error);
+        console.error("Failed to get app version:", error);
         setVersionVerified(true);
       } finally {
         setIsLoadingVersion(false);
@@ -174,28 +196,33 @@ const AppUpdateChecker = () => {
   }, [user?.appVersion, token, updateUserVersion]);
 
   // Polling query
-  const queryVersion = currentVersion || '0.0.0';
+  const queryVersion = currentVersion || "0.0.0";
   const { data, isLoading, error, refetch } = useCheckAppUpdateQuery(
     {
-      platform: 'android',
+      platform: "android",
       currentVersion: queryVersion,
       token: token || undefined,
     },
     {
-      skip: !isNative || isLoadingVersion || !versionVerified || isFirstLaunch || !currentVersion,
+      skip:
+        !isNative ||
+        isLoadingVersion ||
+        !versionVerified ||
+        isFirstLaunch ||
+        !currentVersion,
       pollingInterval: 120000,
-    }
+    },
   );
 
   // Debug API response
   useEffect(() => {
     if (data) {
-      console.log('📡 API check response:', data);
-      console.log('📡 Current version:', currentVersion);
-      console.log('📡 Latest version:', data?.data?.version);
+      console.log("📡 API check response:", data);
+      console.log("📡 Current version:", currentVersion);
+      console.log("📡 Latest version:", data?.data?.version);
     }
     if (error) {
-      console.error('❌ API check error:', error);
+      console.error("❌ API check error:", error);
     }
   }, [data, error, currentVersion]);
 
@@ -208,19 +235,19 @@ const AppUpdateChecker = () => {
     const setupPushListener = async () => {
       try {
         pushListener = await PushNotifications.addListener(
-          'pushNotificationReceived',
+          "pushNotificationReceived",
           (notification) => {
-            console.log('📩 PUSH RECEIVED:', notification);
+            console.log("📩 PUSH RECEIVED:", notification);
             const payload = notification?.data || notification?.payload || {};
-            if (payload.type === 'APP_UPDATE') {
-              console.log('🔄 APP_UPDATE push – calling refetch()');
+            if (payload.type === "APP_UPDATE") {
+              console.log("🔄 APP_UPDATE push – calling refetch()");
               refetch();
             }
-          }
+          },
         );
-        console.log('✅ Push listener registered');
+        console.log("✅ Push listener registered");
       } catch (err) {
-        console.error('❌ Failed to register push listener:', err);
+        console.error("❌ Failed to register push listener:", err);
       }
     };
 
@@ -229,7 +256,7 @@ const AppUpdateChecker = () => {
     return () => {
       if (pushListener) {
         pushListener.remove();
-        console.log('🗑️ Push listener removed');
+        console.log("🗑️ Push listener removed");
       }
     };
   }, [isNative, refetch]);
@@ -241,14 +268,17 @@ const AppUpdateChecker = () => {
     let listenerHandle;
 
     const setupResumeListener = async () => {
-      listenerHandle = await CapacitorApp.addListener('appStateChange', ({ isActive }) => {
-        if (isActive) {
-          console.log('📱 App resumed – checking for updates');
-          if (!isFirstLaunch) {
-            refetch();
+      listenerHandle = await CapacitorApp.addListener(
+        "appStateChange",
+        ({ isActive }) => {
+          if (isActive) {
+            console.log("📱 App resumed – checking for updates");
+            if (!isFirstLaunch) {
+              refetch();
+            }
           }
-        }
-      });
+        },
+      );
     };
 
     setupResumeListener();
@@ -260,41 +290,64 @@ const AppUpdateChecker = () => {
 
   // Update from API response
   useEffect(() => {
-    if (data?.data?.hasUpdate && !isLoading && !isLoadingVersion && versionVerified && !isFirstLaunch && currentVersion) {
-      console.log('📱 Update from API check:', data.data);
-      
+    if (
+      data?.data?.hasUpdate &&
+      !isLoading &&
+      !isLoadingVersion &&
+      versionVerified &&
+      !isFirstLaunch &&
+      currentVersion
+    ) {
+      console.log("📱 Update from API check:", data.data);
+
       // CRITICAL: Only show if versions are DIFFERENT
       const apiVersion = normalizeVersion(data.data.version);
       const currentVer = normalizeVersion(currentVersion);
-      
-      console.log('📱 Comparing versions - API:', apiVersion, 'Current:', currentVer);
-      
+
+      console.log(
+        "📱 Comparing versions - API:",
+        apiVersion,
+        "Current:",
+        currentVer,
+      );
+
       if (apiVersion === currentVer) {
-        console.log('✅ API version matches current - NO UPDATE NEEDED');
+        console.log("✅ API version matches current - NO UPDATE NEEDED");
         return;
       }
-      
+
       // Check if dismissed
       if (dismissedUntil && new Date() < new Date(dismissedUntil)) {
-        console.log('⏳ Dismissed until:', dismissedUntil);
+        console.log("⏳ Dismissed until:", dismissedUntil);
         return;
       }
-      
+
       if (!updateFromLogin?.hasUpdate) {
         setUpdateFromLogin(data.data);
         setIsVisible(true);
       }
     }
-  }, [data, isLoading, isLoadingVersion, versionVerified, updateFromLogin, isFirstLaunch, currentVersion, dismissedUntil]);
+  }, [
+    data,
+    isLoading,
+    isLoadingVersion,
+    versionVerified,
+    updateFromLogin,
+    isFirstLaunch,
+    currentVersion,
+    dismissedUntil,
+  ]);
 
   // Determine if we have an update
-  const hasUpdate = !isFirstLaunch && (data?.data?.hasUpdate || updateFromLogin?.hasUpdate || false);
+  const hasUpdate =
+    !isFirstLaunch &&
+    (data?.data?.hasUpdate || updateFromLogin?.hasUpdate || false);
   const updateInfo = updateFromLogin?.hasUpdate ? updateFromLogin : data?.data;
 
   // Download handler
   const handleUpdateNow = async () => {
     if (!updateInfo?._id) {
-      console.error('No version ID available');
+      console.error("No version ID available");
       return;
     }
 
@@ -302,30 +355,33 @@ const AppUpdateChecker = () => {
 
     try {
       const downloadUrl = getAppDownloadUrl(updateInfo._id, token);
-      window.open(downloadUrl, '_system');
+      window.open(downloadUrl, "_system");
 
       if (token && user?.id) {
         try {
           await updateUserVersion({
             token,
-            version: updateInfo.version
+            version: updateInfo.version,
           }).unwrap();
-          console.log('✅ User version updated successfully');
+          console.log("✅ User version updated successfully");
         } catch (updateError) {
-          console.error('❌ Failed to update version in database:', updateError);
+          console.error(
+            "❌ Failed to update version in database:",
+            updateError,
+          );
         }
       }
 
       // Update stored version
       const normVersion = normalizeVersion(updateInfo.version);
-      localStorage.setItem('appVersion', normVersion);
+      localStorage.setItem("appVersion", normVersion);
       setCurrentVersion(normVersion);
 
       if (!updateInfo?.isRequired) {
         setIsVisible(false);
       }
     } catch (error) {
-      console.error('Download failed:', error);
+      console.error("Download failed:", error);
     } finally {
       setIsDownloading(false);
     }
@@ -348,13 +404,20 @@ const AppUpdateChecker = () => {
 
   // Manual refetch (debug)
   const forceCheck = () => {
-    console.log('🔄 Manual refetch triggered');
+    console.log("🔄 Manual refetch triggered");
     setDismissedUntil(null);
     refetch();
   };
 
   // Render
-  if (!isNative || isLoading || isLoadingVersion || !versionVerified || isFirstLaunch || !currentVersion) {
+  if (
+    !isNative ||
+    isLoading ||
+    isLoadingVersion ||
+    !versionVerified ||
+    isFirstLaunch ||
+    !currentVersion
+  ) {
     return null;
   }
 
@@ -367,17 +430,17 @@ const AppUpdateChecker = () => {
         <button
           onClick={forceCheck}
           style={{
-            position: 'fixed',
+            position: "fixed",
             bottom: 80,
             right: 10,
             zIndex: 9999,
-            background: 'blue',
-            color: 'white',
-            padding: '8px 12px',
+            background: "blue",
+            color: "white",
+            padding: "8px 12px",
             borderRadius: 8,
             fontSize: 12,
-            fontWeight: 'bold',
-            boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+            fontWeight: "bold",
+            boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
           }}
         >
           Force Check
@@ -386,19 +449,21 @@ const AppUpdateChecker = () => {
 
       {/* Show current version in dev */}
       {isDev && (
-        <div style={{
-          position: 'fixed',
-          bottom: 130,
-          right: 10,
-          zIndex: 9999,
-          background: 'rgba(0,0,0,0.8)',
-          color: 'white',
-          padding: '4px 10px',
-          borderRadius: 6,
-          fontSize: 10,
-          fontFamily: 'monospace',
-        }}>
-          v{currentVersion} {hasUpdate ? '🔴' : '✅'}
+        <div
+          style={{
+            position: "fixed",
+            bottom: 130,
+            right: 10,
+            zIndex: 9999,
+            background: "rgba(0,0,0,0.8)",
+            color: "white",
+            padding: "4px 10px",
+            borderRadius: 6,
+            fontSize: 10,
+            fontFamily: "monospace",
+          }}
+        >
+          v{currentVersion} {hasUpdate ? "🔴" : "✅"}
         </div>
       )}
 
@@ -407,15 +472,19 @@ const AppUpdateChecker = () => {
         <>
           {/* Desktop Banner */}
           <div className="hidden md:block fixed bottom-4 right-4 z-50 max-w-sm animate-in slide-in-from-bottom-5 duration-300">
-            <div className={`rounded-xl shadow-2xl border ${
-              updateInfo.isRequired
-                ? 'bg-red-50 border-red-200'
-                : 'bg-white border-gray-200'
-            } p-4`}>
+            <div
+              className={`rounded-xl shadow-2xl border ${
+                updateInfo.isRequired
+                  ? "bg-red-50 border-red-200"
+                  : "bg-white border-gray-200"
+              } p-4`}
+            >
               <div className="flex items-start gap-3">
-                <div className={`p-2 rounded-lg ${
-                  updateInfo.isRequired ? 'bg-red-100' : 'bg-purple-100'
-                }`}>
+                <div
+                  className={`p-2 rounded-lg ${
+                    updateInfo.isRequired ? "bg-red-100" : "bg-purple-100"
+                  }`}
+                >
                   {updateInfo.isRequired ? (
                     <AlertCircle className="w-5 h-5 text-red-600" />
                   ) : (
@@ -423,10 +492,14 @@ const AppUpdateChecker = () => {
                   )}
                 </div>
                 <div className="flex-1">
-                  <h3 className={`font-semibold text-sm ${
-                    updateInfo.isRequired ? 'text-red-800' : 'text-gray-800'
-                  }`}>
-                    {updateInfo.isRequired ? 'Update Required' : 'New Update Available'}
+                  <h3
+                    className={`font-semibold text-sm ${
+                      updateInfo.isRequired ? "text-red-800" : "text-gray-800"
+                    }`}
+                  >
+                    {updateInfo.isRequired
+                      ? "Update Required"
+                      : "New Update Available"}
                   </h3>
                   <p className="text-xs text-gray-600 mt-1">
                     Version {updateInfo.version} is now available.
@@ -447,9 +520,9 @@ const AppUpdateChecker = () => {
                       disabled={isDownloading}
                       className={`flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-lg transition ${
                         updateInfo.isRequired
-                          ? 'bg-red-600 text-white hover:bg-red-700'
-                          : 'bg-purple-600 text-white hover:bg-purple-700'
-                      } ${isDownloading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                          ? "bg-red-600 text-white hover:bg-red-700"
+                          : "bg-purple-600 text-white hover:bg-purple-700"
+                      } ${isDownloading ? "opacity-50 cursor-not-allowed" : ""}`}
                     >
                       {isDownloading ? (
                         <>
@@ -487,15 +560,19 @@ const AppUpdateChecker = () => {
 
           {/* Mobile Banner */}
           <div className="md:hidden fixed bottom-0 left-0 right-0 z-50 animate-in slide-in-from-bottom-5 duration-300">
-            <div className={`rounded-t-2xl shadow-2xl border-t ${
-              updateInfo.isRequired
-                ? 'bg-red-50 border-red-200'
-                : 'bg-white border-gray-200'
-            } p-4`}>
+            <div
+              className={`rounded-t-2xl shadow-2xl border-t ${
+                updateInfo.isRequired
+                  ? "bg-red-50 border-red-200"
+                  : "bg-white border-gray-200"
+              } p-4`}
+            >
               <div className="flex items-start gap-3">
-                <div className={`p-2 rounded-lg ${
-                  updateInfo.isRequired ? 'bg-red-100' : 'bg-purple-100'
-                }`}>
+                <div
+                  className={`p-2 rounded-lg ${
+                    updateInfo.isRequired ? "bg-red-100" : "bg-purple-100"
+                  }`}
+                >
                   {updateInfo.isRequired ? (
                     <AlertCircle className="w-5 h-5 text-red-600" />
                   ) : (
@@ -503,10 +580,14 @@ const AppUpdateChecker = () => {
                   )}
                 </div>
                 <div className="flex-1">
-                  <h3 className={`font-semibold text-sm ${
-                    updateInfo.isRequired ? 'text-red-800' : 'text-gray-800'
-                  }`}>
-                    {updateInfo.isRequired ? 'Update Required' : 'New Update Available'}
+                  <h3
+                    className={`font-semibold text-sm ${
+                      updateInfo.isRequired ? "text-red-800" : "text-gray-800"
+                    }`}
+                  >
+                    {updateInfo.isRequired
+                      ? "Update Required"
+                      : "New Update Available"}
                   </h3>
                   <p className="text-xs text-gray-600 mt-1">
                     Version {updateInfo.version} is now available.
@@ -514,7 +595,7 @@ const AppUpdateChecker = () => {
                   {updateInfo.releaseNotes && (
                     <p className="text-xs text-gray-500 mt-1">
                       {updateInfo.releaseNotes.length > 80
-                        ? updateInfo.releaseNotes.slice(0, 80) + '...'
+                        ? updateInfo.releaseNotes.slice(0, 80) + "..."
                         : updateInfo.releaseNotes}
                     </p>
                   )}
@@ -524,9 +605,9 @@ const AppUpdateChecker = () => {
                       disabled={isDownloading}
                       className={`flex-1 flex items-center justify-center gap-1 py-2 text-sm font-medium rounded-lg transition ${
                         updateInfo.isRequired
-                          ? 'bg-red-600 text-white hover:bg-red-700'
-                          : 'bg-purple-600 text-white hover:bg-purple-700'
-                      } ${isDownloading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                          ? "bg-red-600 text-white hover:bg-red-700"
+                          : "bg-purple-600 text-white hover:bg-purple-700"
+                      } ${isDownloading ? "opacity-50 cursor-not-allowed" : ""}`}
                     >
                       {isDownloading ? (
                         <>
