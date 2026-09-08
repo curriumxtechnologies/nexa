@@ -3,7 +3,6 @@ import AppVersion from '../models/appVersionModel.js';
 import User from '../models/userModel.js';
 import jwt from 'jsonwebtoken';
 import axios from 'axios';
-import { broadcastAppUpdate } from './notificationsController.js';
 // (import semver if you want robust version comparison)
 
 // ─── Helper: admin check ──────────────────────────────────────────────
@@ -355,14 +354,6 @@ export const uploadApp = async (req, res) => {
     });
 
     await appVersion.save();
-
-    // 🚀 Broadcast push notification to all users
-    broadcastAppUpdate({
-      _id: appVersion._id,
-      version: appVersion.version,
-      isRequired: appVersion.isRequired,
-      releaseNotes: appVersion.releaseNotes,
-    }).catch(err => console.error('Push broadcast failed:', err));
 
     res.status(201).json({
       success: true,
