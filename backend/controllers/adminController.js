@@ -7,9 +7,6 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
-// Import the push broadcasting function from appController
-import { broadcastAppUpdate } from './appController.js';
-
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -460,8 +457,6 @@ const getEmailStats = async (req, res) => {
  * Upload new app version (APK/AAB) - admin & super_admin only
  * POST /api/admin/app/upload
  * 
- * After successful upload, broadcasts a push notification to all users
- * so that the update popup appears instantly.
  */
 const uploadApp = async (req, res) => {
   try {
@@ -522,16 +517,9 @@ const uploadApp = async (req, res) => {
 
     await appVersion.save();
 
-    // 🚀 Broadcast push notification to all users immediately
-    // This triggers the update popup on all devices without waiting for polling.
-    // We do this asynchronously to not block the response.
-    broadcastAppUpdate(appVersion._id).catch(err => {
-      console.error('❌ Push broadcast failed after upload:', err);
-    });
-
     res.status(201).json({
       success: true,
-      message: 'App version uploaded successfully and push notification sent.',
+      message: 'App version uploaded successfully.',
       data: {
         id: appVersion._id,
         version: appVersion.version,
