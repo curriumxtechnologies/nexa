@@ -3,7 +3,7 @@ import AppVersion from '../models/appVersionModel.js';
 import User from '../models/userModel.js';
 import jwt from 'jsonwebtoken';
 import axios from 'axios';
-import { broadcastAppUpdate } from './notificationController.js';
+import { broadcastAppUpdate } from './notificationsController.js';
 // (import semver if you want robust version comparison)
 
 // ─── Helper: admin check ──────────────────────────────────────────────
