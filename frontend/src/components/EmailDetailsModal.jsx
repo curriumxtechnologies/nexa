@@ -1,224 +1,269 @@
-import React, { useState } from 'react';
-import { useCreateCustomEmailMutation } from '../slices/emailApiSlice';
-import { X, Plus, Loader2, AlertCircle, Camera } from 'lucide-react';
+// src/components/EmailDetailsModal.jsx
+import React from 'react';
+import {
+  X,
+  Mail,
+  User,
+  Copy,
+  Check,
+  Calendar,
+  Forward,
+  FileText,
+  Shield,
+  Star,
+  Globe,
+  Hash,
+  Image as ImageIcon,
+} from 'lucide-react';
+import { format } from 'date-fns';
 
-const CreateCustomEmailModal = ({ availableDomains, onClose, onSuccess }) => {
-  const [createCustomEmail, { isLoading }] = useCreateCustomEmailMutation();
+const EmailDetailsModal = ({ email, isTeamEmail, onClose, onCopy, copiedId }) => {
+  if (!email) return null;
 
-  const [username, setUsername] = useState('');
-  const [forwardToEmail, setForwardToEmail] = useState('');
-  const [isDefault, setIsDefault] = useState(false);
-  const [displayName, setDisplayName] = useState('');
-  const [signature, setSignature] = useState('');
-  const [profilePicture, setProfilePicture] = useState(null);
-  const [profilePreview, setProfilePreview] = useState(null);
-  const [selectedResendConfigId, setSelectedResendConfigId] = useState('');
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
+  // ── Defensive defaults: never let a missing array crash the render ──
+  const forwardingRules = email.forwardingRules ?? [];
+  const aliases        = email.aliases        ?? [];
+  const tags           = email.tags           ?? [];
+  const permissions    = email.permissions    ?? [];
 
-  const handleFileChange = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      if (file.size > 5 * 1024 * 1024) {
-        setError('Profile picture must be less than 5MB');
-        return;
-      }
-      const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
-      if (!allowedTypes.includes(file.type)) {
-        setError('Only image files are allowed (JPEG, PNG, GIF, WEBP)');
-        return;
-      }
-      setProfilePicture(file);
-      const reader = new FileReader();
-      reader.onloadend = () => setProfilePreview(reader.result);
-      reader.readAsDataURL(file);
+  const handleCopy = (value, key) => {
+    if (typeof onCopy === 'function') {
+      onCopy(value, key);
+    } else if (navigator?.clipboard) {
+      navigator.clipboard.writeText(value);
     }
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setError('');
-    setSuccess('');
-    if (!selectedResendConfigId) return setError('Please select a domain');
-    if (!username) return setError('Please enter a username');
-    if (!forwardToEmail) return setError('Please enter a forward email address');
+  const isCopied = (key) => copiedId === key;
 
-    try {
-      const formData = new FormData();
-      formData.append('username', username);
-      formData.append('forwardToEmail', forwardToEmail);
-      formData.append('resendConfigId', selectedResendConfigId);
-      if (isDefault) formData.append('isDefault', true);
-      if (displayName) formData.append('displayName', displayName);
-      if (signature) formData.append('signature', signature);
-      if (profilePicture) formData.append('profilePicture', profilePicture);
-
-      await createCustomEmail(formData).unwrap();
-      setSuccess('Custom email created successfully!');
-      setTimeout(() => {
-        onSuccess?.();
-        onClose();
-      }, 1000);
-    } catch (err) {
-      setError(err.data?.message || 'Failed to create custom email');
-    }
-  };
+  const Row = ({ icon: Icon, label, children }) => (
+    <div className="flex items-start space-x-3 py-3 border-b border-gray-50 last:border-b-0">
+      <div className="p-1.5 bg-purple-50 rounded-lg flex-shrink-0 mt-0.5">
+        <Icon className="w-3.5 h-3.5 text-purple-600" />
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-0.5">
+          {label}
+        </p>
+        <div className="text-sm text-gray-800 break-words">{children}</div>
+      </div>
+    </div>
+  );
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-end sm:items-center justify-center z-[9999] p-0 sm:p-4">
-      <div className="bg-white rounded-t-xl sm:rounded-xl shadow-xl w-full max-w-md max-h-[75vh] sm:max-h-[90vh] mb-16 sm:mb-0 overflow-y-auto flex flex-col">
+      <div className="bg-white rounded-t-xl sm:rounded-xl shadow-xl w-full max-w-md max-h-[85vh] sm:max-h-[90vh] mb-16 sm:mb-0 overflow-y-auto flex flex-col">
+        {/* Header */}
         <div className="p-4 sm:p-5 sticky top-0 bg-white border-b border-gray-100 z-10 flex-shrink-0">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-2">
               <div className="p-1.5 bg-purple-50 rounded-lg">
-                <Plus className="w-4 h-4 text-purple-600" />
+                <Mail className="w-4 h-4 text-purple-600" />
               </div>
-              <h2 className="text-lg font-semibold text-gray-800">Create Custom Email</h2>
+              <div>
+                <h2 className="text-lg font-semibold text-gray-800">Email Details</h2>
+                <p className="text-xs text-gray-400">View information about this email</p>
+              </div>
             </div>
-            <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+            <button
+              onClick={onClose}
+              className="text-gray-400 hover:text-gray-600 transition p-1"
+              aria-label="Close"
+            >
               <X className="w-5 h-5" />
             </button>
           </div>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-4 sm:p-5 space-y-4 overflow-y-auto">
-          {error && (
-            <div className="p-3 bg-red-50 rounded-lg">
-              <p className="text-sm text-red-600">{error}</p>
-            </div>
-          )}
-          {success && (
-            <div className="p-3 bg-green-50 rounded-lg">
-              <p className="text-sm text-green-600">{success}</p>
-            </div>
-          )}
-
-          <div className="flex justify-center">
-            <label className="cursor-pointer">
-              <div className="relative">
-                {profilePreview ? (
-                  <img
-                    src={profilePreview}
-                    alt="Profile preview"
-                    className="w-16 h-16 rounded-full object-cover border-2 border-purple-200"
-                  />
-                ) : (
-                  <div className="w-16 h-16 bg-purple-50 rounded-full flex items-center justify-center border-2 border-purple-200">
-                    <Camera className="w-6 h-6 text-purple-600" />
-                  </div>
-                )}
-                <div className="absolute bottom-0 right-0 bg-purple-600 rounded-full p-1 border-2 border-white">
-                  <Camera className="w-3 h-3 text-white" />
-                </div>
-              </div>
-              <input type="file" accept="image/*" onChange={handleFileChange} className="hidden" />
-            </label>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Select Domain</label>
-            <select
-              value={selectedResendConfigId}
-              onChange={(e) => setSelectedResendConfigId(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-400 outline-none text-sm"
-              required
-            >
-              <option value="">Select a domain</option>
-              {availableDomains.map((domain) => (
-                <option key={domain.id || domain.resendConfigId} value={domain.id || domain.resendConfigId}>
-                  {domain.domain}
-                  {domain.permissions?.canCreateCustomEmails && !domain.owner && ' (Team)'}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Username</label>
-            <div className="flex items-center space-x-2">
-              <input
-                type="text"
-                value={username}
-                onChange={(e) => setUsername(e.target.value.toLowerCase())}
-                placeholder="support"
-                className="flex-1 px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-400 outline-none text-sm"
-                required
+        {/* Body */}
+        <div className="p-4 sm:p-5">
+          {/* Avatar + primary info */}
+          <div className="flex flex-col items-center text-center mb-4">
+            {email.profilePicture?.url ? (
+              <img
+                src={email.profilePicture.url}
+                alt={email.displayName || email.username}
+                className="w-16 h-16 rounded-full object-cover border-2 border-purple-200"
               />
-              <span className="text-gray-500 text-sm">@</span>
-              <span className="text-gray-600 text-sm truncate max-w-[120px]">
-                {availableDomains.find(d => (d.id || d.resendConfigId) === selectedResendConfigId)?.domain || 'domain.com'}
-              </span>
+            ) : (
+              <div className="w-16 h-16 bg-purple-50 rounded-full flex items-center justify-center border-2 border-purple-200">
+                <User className="w-7 h-7 text-purple-600" />
+              </div>
+            )}
+            <p className="mt-3 font-semibold text-gray-800 text-base">
+              {email.displayName || email.username || 'Unnamed'}
+            </p>
+            <div className="flex items-center space-x-1 mt-0.5">
+              <p className="text-sm text-gray-500 break-all">{email.email}</p>
+              <button
+                onClick={() => handleCopy(email.email, email._id)}
+                className="text-gray-400 hover:text-gray-600 flex-shrink-0"
+                aria-label="Copy email"
+              >
+                {isCopied(email._id) ? (
+                  <Check className="w-3.5 h-3.5 text-green-500" />
+                ) : (
+                  <Copy className="w-3.5 h-3.5" />
+                )}
+              </button>
+            </div>
+
+            {/* Badges */}
+            <div className="flex items-center flex-wrap justify-center gap-1.5 mt-2">
+              {email.isDefault && (
+                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-green-100 text-green-700">
+                  <Star className="w-3 h-3 mr-1" /> Default
+                </span>
+              )}
+              {isTeamEmail && (
+                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-indigo-100 text-indigo-700">
+                  <Shield className="w-3 h-3 mr-1" /> Team
+                </span>
+              )}
+              {tags.map((tag) => (
+                <span
+                  key={tag}
+                  className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-gray-100 text-gray-600"
+                >
+                  <Hash className="w-3 h-3 mr-0.5" />
+                  {tag}
+                </span>
+              ))}
             </div>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Display Name (Optional)</label>
-            <input
-              type="text"
-              value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
-              placeholder="John Doe"
-              className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-400 outline-none text-sm"
-            />
+          {/* Details */}
+          <div className="bg-gray-50/60 rounded-xl px-3">
+            <Row icon={User} label="Display Name">
+              {email.displayName || <span className="text-gray-400">Not set</span>}
+            </Row>
+
+            <Row icon={Globe} label="Username">
+              {email.username || <span className="text-gray-400">—</span>}
+            </Row>
+
+            <Row icon={Forward} label="Forward To">
+              {email.forwardToEmail || (
+                <span className="text-gray-400">Not configured</span>
+              )}
+            </Row>
+
+            <Row icon={Mail} label="Domain">
+              {email.domain || <span className="text-gray-400">—</span>}
+            </Row>
+
+            <Row icon={Calendar} label="Created">
+              {email.createdAt ? (
+                format(new Date(email.createdAt), 'MMM d, yyyy • h:mm a')
+              ) : (
+                <span className="text-gray-400">Unknown</span>
+              )}
+            </Row>
+
+            {email.updatedAt && (
+              <Row icon={Calendar} label="Last Updated">
+                {format(new Date(email.updatedAt), 'MMM d, yyyy • h:mm a')}
+              </Row>
+            )}
+
+            {email.signature && (
+              <Row icon={FileText} label="Signature">
+                <p className="whitespace-pre-wrap text-gray-700">{email.signature}</p>
+              </Row>
+            )}
+
+            {email.profilePicture?.fileName && (
+              <Row icon={ImageIcon} label="Profile Image">
+                <p className="text-gray-700">{email.profilePicture.fileName}</p>
+                {email.profilePicture.fileSize ? (
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    {(email.profilePicture.fileSize / 1024).toFixed(1)} KB
+                  </p>
+                ) : null}
+              </Row>
+            )}
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Forward To Email</label>
-            <input
-              type="email"
-              value={forwardToEmail}
-              onChange={(e) => setForwardToEmail(e.target.value)}
-              placeholder="your-personal@email.com"
-              className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-400 outline-none text-sm"
-              required
-            />
-            <p className="text-xs text-gray-400 mt-1">Emails will be forwarded to this address</p>
-          </div>
+          {/* Forwarding rules (only if present) */}
+          {forwardingRules.length > 0 && (
+            <div className="mt-4">
+              <p className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-2">
+                Forwarding Rules
+              </p>
+              <div className="space-y-2">
+                {forwardingRules.map((rule, idx) => (
+                  <div
+                    key={rule._id || idx}
+                    className="bg-white border border-gray-100 rounded-lg p-3 text-sm"
+                  >
+                    <p className="text-gray-800">
+                      {rule.pattern || rule.match || 'Rule'}
+                    </p>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      → {rule.forwardTo || rule.destination || '—'}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Signature (Optional)</label>
-            <textarea
-              value={signature}
-              onChange={(e) => setSignature(e.target.value)}
-              rows="2"
-              placeholder="Best regards,&#10;John Doe"
-              className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-400 outline-none text-sm"
-            />
-          </div>
+          {/* Aliases (only if present) */}
+          {aliases.length > 0 && (
+            <div className="mt-4">
+              <p className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-2">
+                Aliases
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {aliases.map((alias, idx) => (
+                  <span
+                    key={idx}
+                    className="px-2 py-1 bg-purple-50 text-purple-700 text-xs rounded-md"
+                  >
+                    {alias}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
 
-          <div className="flex items-center space-x-2">
-            <input
-              type="checkbox"
-              id="isDefault"
-              checked={isDefault}
-              onChange={(e) => setIsDefault(e.target.checked)}
-              className="rounded border-gray-300 text-purple-600 focus:ring-purple-500"
-            />
-            <label htmlFor="isDefault" className="text-sm text-gray-700">
-              Set as default email address
-            </label>
-          </div>
+          {/* Permissions (only if present) */}
+          {permissions.length > 0 && (
+            <div className="mt-4">
+              <p className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-2">
+                Permissions
+              </p>
+              <div className="space-y-1">
+                {permissions.map((perm, idx) => (
+                  <div
+                    key={idx}
+                    className="flex items-center justify-between text-xs bg-gray-50 rounded-lg px-3 py-2"
+                  >
+                    <span className="text-gray-600">
+                      {perm.user?.email || perm.user || 'User'}
+                    </span>
+                    <span className="text-gray-500">
+                      {perm.role || 'Viewer'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
 
-          <div className="flex items-center space-x-3 pt-2 pb-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex-1 px-4 py-2 border border-gray-200 text-gray-700 text-sm rounded-lg hover:bg-gray-50 transition"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={isLoading}
-              className="flex-1 px-4 py-2 bg-purple-600 text-white text-sm rounded-lg hover:bg-purple-700 transition disabled:opacity-50"
-            >
-              {isLoading ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'Create Email'}
-            </button>
-          </div>
-        </form>
+        {/* Footer */}
+        <div className="p-4 border-t border-gray-100 flex-shrink-0">
+          <button
+            onClick={onClose}
+            className="w-full px-4 py-2 bg-purple-600 text-white text-sm rounded-lg hover:bg-purple-700 transition"
+          >
+            Close
+          </button>
+        </div>
       </div>
     </div>
   );
 };
 
-export default CreateCustomEmailModal;
+export default EmailDetailsModal;
